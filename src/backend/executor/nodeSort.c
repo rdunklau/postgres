@@ -29,6 +29,10 @@
  *		which saves the results in a temporary file or memory. After the
  *		initial call, returns a tuple from the file with each call.
  *
+ *		The tuplesort can either occur on the whole tuple (this is the nominal
+ *		case) or, when the input / output tuple consists of only one attribute,
+ *		we switch to the tuplesort_*_datum API, optimized for that specific case.
+ *
  *		Conditions:
  *		  -- none.
  *
@@ -86,31 +90,64 @@ ExecSort(PlanState *pstate)
 		outerNode = outerPlanState(node);
 		tupDesc = ExecGetResultType(outerNode);
 
-		tuplesortstate = tuplesort_begin_heap(tupDesc,
-											  plannode->numCols,
-											  plannode->sortColIdx,
-											  plannode->sortOperators,
-											  plannode->collations,
-											  plannode->nullsFirst,
-											  work_mem,
-											  NULL,
-											  node->randomAccess);
+		/*
+		 * Switch to the tuplesort_*_datum interface when we have only one
+		 * key, as it is much more efficient especially when the type is
+		 * pass-by-value.
+		 */
+		if (tupDesc->natts == 1)
+		{
+			node->datumSort = true;
+			tuplesortstate = tuplesort_begin_datum(TupleDescAttr(tupDesc, 0)->atttypid,
+												   plannode->sortOperators[0],
+												   plannode->collations[0],
+												   plannode->nullsFirst[0],
+												   work_mem,
+												   NULL,
+												   node->randomAccess);
+		}
+		else
+			tuplesortstate = tuplesort_begin_heap(tupDesc,
+												  plannode->numCols,
+												  plannode->sortColIdx,
+												  plannode->sortOperators,
+												  plannode->collations,
+												  plannode->nullsFirst,
+												  work_mem,
+												  NULL,
+												  node->randomAccess);
 		if (node->bounded)
 			tuplesort_set_bound(tuplesortstate, node->bound);
 		node->tuplesortstate = (void *) tuplesortstate;
 
 		/*
-		 * Scan the subplan and feed all the tuples to tuplesort.
+		 * Scan the subplan and feed all the tuples to tuplesort, using either
+		 * the _putdatum or _puttupleslot API as appropriate.
 		 */
-
-		for (;;)
+		if (node->datumSort)
 		{
-			slot = ExecProcNode(outerNode);
+			for (;;)
+			{
+				slot = ExecProcNode(outerNode);
 
-			if (TupIsNull(slot))
-				break;
+				if (TupIsNull(slot))
+					break;
+				slot_getsomeattrs(slot, 1);
+				tuplesort_putdatum(tuplesortstate,
+								   slot->tts_values[0],
+								   slot->tts_isnull[0]);
+			}
+		}
+		else
+		{
+			for (;;)
+			{
+				slot = ExecProcNode(outerNode);
 
-			tuplesort_puttupleslot(tuplesortstate, slot);
+				if (TupIsNull(slot))
+					break;
+				tuplesort_puttupleslot(tuplesortstate, slot);
+			}
 		}
 
 		/*
@@ -150,9 +187,18 @@ ExecSort(PlanState *pstate)
 	 * next fetch from the tuplesort.
 	 */
 	slot = node->ss.ps.ps_ResultTupleSlot;
-	(void) tuplesort_gettupleslot(tuplesortstate,
-								  ScanDirectionIsForward(dir),
-								  false, slot, NULL);
+	if (node->datumSort)
+	{
+		ExecClearTuple(slot);
+		if (tuplesort_getdatum(tuplesortstate, ScanDirectionIsForward(dir),
+							   &(slot->tts_values[0]), &(slot->tts_isnull[0]), NULL))
+			ExecStoreVirtualTuple(slot);
+	}
+	else
+		(void) tuplesort_gettupleslot(tuplesortstate,
+									  ScanDirectionIsForward(dir),
+									  false, slot, NULL);
+
 	return slot;
 }
 
@@ -191,6 +237,7 @@ ExecInitSort(Sort *node, EState *estate, int eflags)
 	sortstate->bounded = false;
 	sortstate->sort_Done = false;
 	sortstate->tuplesortstate = NULL;
+	sortstate->datumSort = false;
 
 	/*
 	 * Miscellaneous initialization
