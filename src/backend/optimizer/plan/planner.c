@@ -195,19 +195,23 @@ static RelOptInfo *create_ordered_paths(PlannerInfo *root,
 										bool target_parallel_safe,
 										double limit_tuples);
 static PathTarget *make_group_input_target(PlannerInfo *root,
-										   PathTarget *final_target);
+										   PathTarget *final_target,
+										   List *sortGroupTargetEntries);
 static PathTarget *make_partial_grouping_target(PlannerInfo *root,
 												PathTarget *grouping_target,
+												PathTarget *input_target,
 												Node *havingQual);
 static List *postprocess_setop_tlist(List *new_tlist, List *orig_tlist);
 static List *select_active_windows(PlannerInfo *root, WindowFuncLists *wflists);
 static PathTarget *make_window_input_target(PlannerInfo *root,
 											PathTarget *final_target,
+											List *sortGroupTargetEntries,
 											List *activeWindows);
 static List *make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
 									  List *tlist);
 static PathTarget *make_sort_input_target(PlannerInfo *root,
 										  PathTarget *final_target,
+										  List *sortGroupTargetEntries,
 										  bool *have_postponed_srfs);
 static void adjust_paths_for_srfs(PlannerInfo *root, RelOptInfo *rel,
 								  List *targets, List *targets_contain_srfs);
@@ -1345,6 +1349,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		List	   *activeWindows = NIL;
 		grouping_sets_data *gset_data = NULL;
 		standard_qp_extra qp_extra;
+		List	   *filteredFinalTlist = NIL;
+		List	   *sortGroupTargetEntries = NIL;
 
 		/* A recursive query should always have setOperations */
 		Assert(!root->hasRecursion);
@@ -1449,7 +1455,16 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		 * because the target width estimates can use per-Var width numbers
 		 * that were obtained within query_planner().
 		 */
-		final_target = create_pathtarget(root, root->processed_tlist);
+		foreach(lc, root->processed_tlist)
+		{
+			TargetEntry *tle = castNode(TargetEntry, lfirst(lc));
+
+			if (!TargetEntryIsSortGroupClauseResjunk(tle))
+				filteredFinalTlist = lappend(filteredFinalTlist, tle);
+			else
+				sortGroupTargetEntries = lappend(sortGroupTargetEntries, tle);
+		}
+		final_target = create_pathtarget(root, filteredFinalTlist);
 		final_target_parallel_safe =
 			is_parallel_safe(root, (Node *) final_target->exprs);
 
@@ -1462,6 +1477,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			sort_input_target = make_sort_input_target(root,
 													   final_target,
+													   sortGroupTargetEntries,
 													   &have_postponed_srfs);
 			sort_input_target_parallel_safe =
 				is_parallel_safe(root, (Node *) sort_input_target->exprs);
@@ -1481,6 +1497,7 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 		{
 			grouping_target = make_window_input_target(root,
 													   final_target,
+													   sortGroupTargetEntries,
 													   activeWindows);
 			grouping_target_parallel_safe =
 				is_parallel_safe(root, (Node *) grouping_target->exprs);
@@ -1500,7 +1517,8 @@ grouping_planner(PlannerInfo *root, double tuple_fraction)
 						 parse->hasAggs || root->hasHavingQual);
 		if (have_grouping)
 		{
-			scanjoin_target = make_group_input_target(root, final_target);
+			scanjoin_target = make_group_input_target(root, final_target,
+													  sortGroupTargetEntries);
 			scanjoin_target_parallel_safe =
 				is_parallel_safe(root, (Node *) scanjoin_target->exprs);
 		}
@@ -4701,7 +4719,7 @@ create_ordered_paths(PlannerInfo *root,
  * query_planner().
  */
 static PathTarget *
-make_group_input_target(PlannerInfo *root, PathTarget *final_target)
+make_group_input_target(PlannerInfo *root, PathTarget *final_target, List *sortGroupTargetEntries)
 {
 	Query	   *parse = root->parse;
 	PathTarget *input_target;
@@ -4741,6 +4759,17 @@ make_group_input_target(PlannerInfo *root, PathTarget *final_target)
 		}
 
 		i++;
+	}
+
+	/* Look if we have to add more entries from the resjunk columns */
+	foreach(lc, sortGroupTargetEntries)
+	{
+		TargetEntry *entry = castNode(TargetEntry, lfirst(lc));
+
+		if (entry->ressortgroupref && get_sortgroupref_clause_noerr(entry->ressortgroupref, parse->groupClause) != NULL)
+		{
+			add_column_to_pathtarget(input_target, entry->expr, entry->ressortgroupref);
+		}
 	}
 
 	/*
@@ -4784,12 +4813,16 @@ make_group_input_target(PlannerInfo *root, PathTarget *final_target)
  * used outside of Aggrefs in the aggregation tlist and HAVING.  (Presumably,
  * these would be Vars that are grouped by or used in grouping expressions.)
  *
+ * We also need to preseve every group column not already there, similar to
+ * make_group_input_target.
+ *
  * grouping_target is the tlist to be emitted by the topmost aggregation step.
  * havingQual represents the HAVING clause.
  */
 static PathTarget *
 make_partial_grouping_target(PlannerInfo *root,
 							 PathTarget *grouping_target,
+							 PathTarget *input_target,
 							 Node *havingQual)
 {
 	Query	   *parse = root->parse;
@@ -4827,6 +4860,28 @@ make_partial_grouping_target(PlannerInfo *root,
 		}
 
 		i++;
+	}
+
+	/*
+	 * Now scan the input target for grouping columns. Here, we don't care
+	 * about non-grouping columns because they will already be in
+	 * grouping_target if they are needed.
+	 */
+	i = 0;
+	foreach(lc, input_target->exprs)
+	{
+		Expr	   *expr = (Expr *) lfirst(lc);
+		Index		sgref = get_pathtarget_sortgroupref(input_target, i);
+
+		if (sgref && parse->groupClause &&
+			get_sortgroupref_clause_noerr(sgref, parse->groupClause) != NULL)
+		{
+			/*
+			 * It's a grouping column, so add it to the partial_target as-is.
+			 * (This allows the upper agg step to repeat the grouping calcs.)
+			 */
+			add_column_to_pathtarget(partial_target, expr, sgref);
+		}
 	}
 
 	/*
@@ -5110,6 +5165,7 @@ common_prefix_cmp(const void *a, const void *b)
 static PathTarget *
 make_window_input_target(PlannerInfo *root,
 						 PathTarget *final_target,
+						 List *sortGroupTargetEntries,
 						 List *activeWindows)
 {
 	Query	   *parse = root->parse;
@@ -5191,6 +5247,21 @@ make_window_input_target(PlannerInfo *root,
 
 		i++;
 	}
+
+	/*
+	 * Now look into targetentries that are not really part of the final rel
+	 */
+	foreach(lc, sortGroupTargetEntries)
+	{
+		TargetEntry *entry = castNode(TargetEntry, lfirst(lc));
+		Index		sgref = entry->ressortgroupref;
+
+		if (sgref != 0 && bms_is_member(sgref, sgrefs))
+		{
+			add_column_to_pathtarget(input_target, entry->expr, sgref);
+		}
+	}
+
 
 	/*
 	 * Pull out all the Vars and Aggrefs mentioned in flattenable columns, and
@@ -5322,6 +5393,7 @@ make_pathkeys_for_window(PlannerInfo *root, WindowClause *wc,
 static PathTarget *
 make_sort_input_target(PlannerInfo *root,
 					   PathTarget *final_target,
+					   List *sortGroupTargetEntries,
 					   bool *have_postponed_srfs)
 {
 	Query	   *parse = root->parse;
@@ -5427,7 +5499,8 @@ make_sort_input_target(PlannerInfo *root,
 	 */
 	if (!(postpone_srfs || have_volatile ||
 		  (have_expensive &&
-		   (parse->limitCount || root->tuple_fraction > 0))))
+		   (parse->limitCount || root->tuple_fraction > 0)) ||
+		  (list_length(sortGroupTargetEntries) > 0)))
 		return final_target;
 
 	/*
@@ -5458,6 +5531,14 @@ make_sort_input_target(PlannerInfo *root,
 									 get_pathtarget_sortgroupref(final_target, i));
 
 		i++;
+	}
+
+	/* Now also add the missing sort columns */
+	foreach(lc, sortGroupTargetEntries)
+	{
+		TargetEntry *entry = castNode(TargetEntry, lfirst(lc));
+
+		add_column_to_pathtarget(input_target, entry->expr, entry->ressortgroupref);
 	}
 
 	/*
@@ -6396,6 +6477,7 @@ create_partial_grouping_paths(PlannerInfo *root,
 	 */
 	partially_grouped_rel->reltarget =
 		make_partial_grouping_target(root, grouped_rel->reltarget,
+									 input_rel->reltarget,
 									 extra->havingQual);
 
 	if (!extra->partial_costs_set)

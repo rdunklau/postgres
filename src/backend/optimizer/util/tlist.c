@@ -224,6 +224,36 @@ tlist_same_exprs(List *tlist1, List *tlist2)
 	return true;
 }
 
+/*
+ * Check wether a tlist is a subset of another tlist.
+ * That subset can be in a different order, or not.
+ */
+bool
+tlist_is_subset(List *tlist1, List *tlist2)
+{
+	ListCell   *lc1;
+
+	foreach(lc1, tlist1)
+	{
+		TargetEntry *tle1 = lfirst_node(TargetEntry, lc1);
+		ListCell   *lc2;
+		bool		found = false;
+
+		foreach(lc2, tlist2)
+		{
+			TargetEntry *tle2 = lfirst_node(TargetEntry, lc2);
+
+			if (equal(tle1->expr, tle2->expr))
+			{
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			return false;
+	}
+	return true;
+}
 
 /*
  * Does tlist have same output datatypes as listed in colTypes?

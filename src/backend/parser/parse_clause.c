@@ -2096,7 +2096,7 @@ findTargetlistEntrySQL99(ParseState *pstate, Node *node, List **tlist,
 	 * will not be projected into the final tuple.
 	 */
 	target_result = transformTargetEntry(pstate, node, expr, exprKind,
-										 NULL, true);
+										 NULL, TARGET_ENTRY_SORTGROUP_CLAUSE);
 
 	*tlist = lappend(*tlist, target_result);
 

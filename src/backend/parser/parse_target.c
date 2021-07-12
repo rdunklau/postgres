@@ -79,7 +79,7 @@ transformTargetEntry(ParseState *pstate,
 					 Node *expr,
 					 ParseExprKind exprKind,
 					 char *colname,
-					 bool resjunk)
+					 uint16 resjunk)
 {
 	/* Transform the node if caller didn't do it already */
 	if (expr == NULL)

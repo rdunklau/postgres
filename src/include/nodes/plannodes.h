@@ -186,6 +186,7 @@ typedef struct Result
 {
 	Plan		plan;
 	Node	   *resconstantqual;
+	bool        resissubset; /* Is the result output a subset of its input ? */
 } Result;
 
 /* ----------------

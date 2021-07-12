@@ -6845,6 +6845,15 @@ make_result(List *tlist,
 	plan->righttree = NULL;
 	node->resconstantqual = resconstantqual;
 
+	/*
+	 * Check if we actually need a "full" result node or if we are just
+	 * getting rid of some columns. In that case, we should mark it as such so
+	 * that explain can ignore it.
+	 */
+	if (tlist && subplan && subplan->targetlist)
+		node->resissubset = tlist_is_subset(tlist, subplan->targetlist);
+	else
+		node->resissubset = false;
 	return node;
 }
 
@@ -7045,6 +7054,7 @@ is_projection_capable_path(Path *path)
 		case T_ModifyTable:
 		case T_MergeAppend:
 		case T_RecursiveUnion:
+		case T_GatherMerge:
 			return false;
 		case T_CustomScan:
 			if (castNode(CustomPath, path)->flags & CUSTOMPATH_SUPPORT_PROJECTION)

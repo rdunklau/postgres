@@ -776,6 +776,19 @@ ExplainPrintPlan(ExplainState *es, QueryDesc *queryDesc)
 		ps = outerPlanState(ps);
 		es->hide_workers = true;
 	}
+
+	/*
+	 * Similarly, if a projection happens to just get a subset of the previous
+	 * result, hide it from the output.
+	 */
+	if (IsA(ps, ResultState) && false)
+	{
+		Result	   *result = (Result *) ps->plan;
+
+		if (result->resissubset && !result->resconstantqual)
+			ps = outerPlanState(ps);
+	}
+
 	ExplainNode(ps, NIL, NULL, NULL, es);
 
 	/*

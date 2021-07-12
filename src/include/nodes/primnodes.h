@@ -1441,13 +1441,18 @@ typedef struct InferenceElem
  * simple reference to a column of a base table (or view).  If it is not
  * a simple reference, these fields are zeroes.
  *
- * If resjunk is true then the column is a working column (such as a sort key)
- * that should be removed from the final output of the query.  Resjunk columns
- * must have resnos that cannot duplicate any regular column's resno.  Also
- * note that there are places that assume resjunk columns come after non-junk
+ * If resjunk is different from 0 then the column is a working column
+ * (such as a sort key) that should be removed from the final output of the query.
+ * Resjunk columns must have resnos that cannot duplicate any regular column's resno.
+ * When different from zero the value is a flag indicating the resjunk's source
+ * Also note that there are places that assume resjunk columns come after non-junk
  * columns.
  *--------------------
  */
+
+#define TARGET_ENTRY_REGULAR 			0x0000
+#define TARGET_ENTRY_SORTGROUP_CLAUSE 	0x0002
+
 typedef struct TargetEntry
 {
 	Expr		xpr;
@@ -1458,9 +1463,23 @@ typedef struct TargetEntry
 									 * clause */
 	Oid			resorigtbl;		/* OID of column's source table */
 	AttrNumber	resorigcol;		/* column's number in source table */
-	bool		resjunk;		/* set to true to eliminate the attribute from
-								 * final target list */
+	uint16         resjunk;		/* Flag indicating the resjunk source, 0 if not a resjunk */
 } TargetEntry;
+
+#define TargetEntryIsResjunk(tle) \
+( \
+  (tle)->resjunk != TARGET_ENTRY_REGULAR \
+)
+
+#define TargetEntryIsSortGroupClauseResjunk(tle) \
+( \
+  ((tle)->resjunk & TARGET_ENTRY_SORTGROUP_CLAUSE) != 0 \
+)
+
+#define TargetEntrySetSortGroupClauseResjunk(tle) \
+( \
+  (tle)->resjunk |= TARGET_ENTRY_SORTGROUP_CLAUSE \
+)
 
 
 /* ----------------------------------------------------------------
