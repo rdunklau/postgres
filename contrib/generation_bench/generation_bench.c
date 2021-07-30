@@ -91,7 +91,7 @@ generation_bench_random(PG_FUNCTION_ARGS)
 
 	maxchunks = nallocs + nloops * Max(0, alloc_cnt - free_cnt);
 
-	cxt = GenerationContextCreate(CurrentMemoryContext, "generation_bench", blockSize);
+	cxt = GenerationContextCreate(CurrentMemoryContext, "generation_bench", blockSize, blockSize, 1024L * 1024L);
 
 	chunks = (Chunk *) palloc(maxchunks * sizeof(Chunk));
 
@@ -229,7 +229,7 @@ generation_bench_fifo(PG_FUNCTION_ARGS)
 
 	maxchunks = nallocs + nloops * Max(0, alloc_cnt - free_cnt);
 
-	cxt = GenerationContextCreate(CurrentMemoryContext, "generation_bench", blockSize);
+	cxt = GenerationContextCreate(CurrentMemoryContext, "generation_bench", blockSize, blockSize, 1024L * 1024L);
 
 	chunks = (Chunk *) palloc(maxchunks * sizeof(Chunk));
 
@@ -354,7 +354,7 @@ generation_bench_lifo(PG_FUNCTION_ARGS)
 
 	maxchunks = nallocs + nloops * Max(0, alloc_cnt - free_cnt);
 
-	cxt = GenerationContextCreate(CurrentMemoryContext, "generation_bench", blockSize);
+	cxt = GenerationContextCreate(CurrentMemoryContext, "generation_bench", blockSize, blockSize, 1024L * 1024L);
 
 	chunks = (Chunk *) palloc(maxchunks * sizeof(Chunk));
 

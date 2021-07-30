@@ -60,7 +60,9 @@ typedef struct GenerationContext
 	MemoryContextData header;	/* Standard memory-context fields */
 
 	/* Generational context parameters */
-	Size		blockSize;		/* standard block size */
+	Size		initBlockSize;	/* initial block size */
+	Size		maxBlockSize;	/* maximum block size */
+	Size		nextBlockSize;	/* next block size to allocate */
 
 	GenerationBlock *block;		/* current (most recently allocated) block */
 	dlist_head	blocks;			/* list of blocks */
@@ -196,7 +198,9 @@ static const MemoryContextMethods GenerationMethods = {
 MemoryContext
 GenerationContextCreate(MemoryContext parent,
 						const char *name,
-						Size blockSize)
+						Size minContextSize,
+						Size initBlockSize,
+						Size maxBlockSize)
 {
 	GenerationContext *set;
 
@@ -208,16 +212,20 @@ GenerationContextCreate(MemoryContext parent,
 					 "padding calculation in GenerationChunk is wrong");
 
 	/*
-	 * First, validate allocation parameters.  (If we're going to throw an
-	 * error, we should do so before the context is created, not after.)  We
-	 * somewhat arbitrarily enforce a minimum 1K block size, mostly because
-	 * that's what AllocSet does.
+	 * First, validate allocation parameters.  Once these were regular runtime
+	 * test and elog's, but in practice Asserts seem sufficient because nobody
+	 * varies their parameters at runtime.  We somewhat arbitrarily enforce a
+	 * minimum 1K block size.
 	 */
-	if (blockSize != MAXALIGN(blockSize) ||
-		blockSize < 1024 ||
-		!AllocHugeSizeIsValid(blockSize))
-		elog(ERROR, "invalid blockSize for memory context: %zu",
-			 blockSize);
+	Assert(initBlockSize == MAXALIGN(initBlockSize) &&
+		   initBlockSize >= 1024);
+	Assert(maxBlockSize == MAXALIGN(maxBlockSize) &&
+		   maxBlockSize >= initBlockSize &&
+		   AllocHugeSizeIsValid(maxBlockSize)); /* must be safe to double */
+	Assert(minContextSize == 0 ||
+		   (minContextSize == MAXALIGN(minContextSize) &&
+			minContextSize >= 1024 &&
+			minContextSize <= maxBlockSize));
 
 	/*
 	 * Allocate the context header.  Unlike aset.c, we never try to combine
@@ -242,7 +250,9 @@ GenerationContextCreate(MemoryContext parent,
 	 */
 
 	/* Fill in GenerationContext-specific header fields */
-	set->blockSize = blockSize;
+	set->initBlockSize = initBlockSize;
+	set->maxBlockSize = maxBlockSize;
+	set->nextBlockSize = initBlockSize;
 	set->block = NULL;
 	dlist_init(&set->blocks);
 
@@ -293,6 +303,9 @@ GenerationReset(MemoryContext context)
 
 	set->block = NULL;
 
+	/* Reset block size allocation sequence, too */
+	set->nextBlockSize = set->initBlockSize;
+
 	Assert(dlist_is_empty(&set->blocks));
 }
 
@@ -329,9 +342,12 @@ GenerationAlloc(MemoryContext context, Size size)
 	GenerationBlock *block;
 	GenerationChunk *chunk;
 	Size		chunk_size = MAXALIGN(size);
+	Size		blockSize;
+
+	blockSize = (set->block) ? set->block->blksize : set->nextBlockSize;
 
 	/* is it an over-sized chunk? if yes, allocate special block */
-	if (chunk_size > set->blockSize / 8)
+	if (chunk_size > (blockSize / 8))
 	{
 		Size		blksize = chunk_size + Generation_BLOCKHDRSZ + Generation_CHUNKHDRSZ;
 
@@ -387,7 +403,16 @@ GenerationAlloc(MemoryContext context, Size size)
 	if ((block == NULL) ||
 		(block->endptr - block->freeptr) < Generation_CHUNKHDRSZ + chunk_size)
 	{
-		Size		blksize = set->blockSize;
+		Size		blksize;
+
+		/*
+		 * The first such block has size initBlockSize, and we double the
+		 * space in each succeeding block, but not more than maxBlockSize.
+		 */
+		blksize = set->nextBlockSize;
+		set->nextBlockSize <<= 1;
+		if (set->nextBlockSize > set->maxBlockSize)
+			set->nextBlockSize = set->maxBlockSize;
 
 		block = (GenerationBlock *) malloc(blksize);
 
