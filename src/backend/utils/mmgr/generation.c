@@ -46,6 +46,8 @@
 #define Generation_BLOCKHDRSZ	MAXALIGN(sizeof(GenerationBlock))
 #define Generation_CHUNKHDRSZ	sizeof(GenerationChunk)
 
+#define Generation_CHUNK_FRACTION	8
+
 typedef struct GenerationBlock GenerationBlock; /* forward reference */
 typedef struct GenerationChunk GenerationChunk;
 
@@ -63,6 +65,7 @@ typedef struct GenerationContext
 	Size		initBlockSize;	/* initial block size */
 	Size		maxBlockSize;	/* maximum block size */
 	Size		nextBlockSize;	/* next block size to allocate */
+	Size		allocChunkLimit;	/* effective chunk size limit */
 
 	GenerationBlock *block;		/* current (most recently allocated) block */
 	GenerationBlock *keeper;	/* keeper block */
@@ -254,6 +257,17 @@ GenerationContextCreate(MemoryContext parent,
 	set->initBlockSize = initBlockSize;
 	set->maxBlockSize = maxBlockSize;
 	set->nextBlockSize = initBlockSize;
+
+	/*
+	 * Compute the allocation chunk size limit for this context.
+	 *
+	 * Follows similar ideas as AllocSet, see aset.c for details ...
+	 */
+	set->allocChunkLimit = maxBlockSize;
+	while ((Size) (set->allocChunkLimit + Generation_CHUNKHDRSZ) >
+		   (Size) ((Size) (maxBlockSize - Generation_BLOCKHDRSZ) / Generation_CHUNK_FRACTION))
+		set->allocChunkLimit >>= 1;
+
 	set->block = NULL;
 	set->keeper = NULL;
 	dlist_init(&set->blocks);
@@ -345,12 +359,9 @@ GenerationAlloc(MemoryContext context, Size size)
 	GenerationBlock *block;
 	GenerationChunk *chunk;
 	Size		chunk_size = MAXALIGN(size);
-	Size		blockSize;
-
-	blockSize = set->initBlockSize;
 
 	/* is it an over-sized chunk? if yes, allocate special block */
-	if (chunk_size > (blockSize / 8))
+	if (chunk_size > set->allocChunkLimit)
 	{
 		Size		blksize = chunk_size + Generation_BLOCKHDRSZ + Generation_CHUNKHDRSZ;
 
@@ -427,6 +438,7 @@ GenerationAlloc(MemoryContext context, Size size)
 		(block->endptr - block->freeptr) < Generation_CHUNKHDRSZ + chunk_size)
 	{
 		Size		blksize;
+		Size		required_size;
 
 		/*
 		 * The first such block has size initBlockSize, and we double the
@@ -436,6 +448,14 @@ GenerationAlloc(MemoryContext context, Size size)
 		set->nextBlockSize <<= 1;
 		if (set->nextBlockSize > set->maxBlockSize)
 			set->nextBlockSize = set->maxBlockSize;
+
+		/*
+		 * If initBlockSize is less than ALLOC_CHUNK_LIMIT, we could need more
+		 * space... but try to keep it a power of 2.
+		 */
+		required_size = chunk_size + Generation_BLOCKHDRSZ + Generation_CHUNKHDRSZ;
+		while (blksize < required_size)
+			blksize <<= 1;
 
 		block = (GenerationBlock *) malloc(blksize);
 
