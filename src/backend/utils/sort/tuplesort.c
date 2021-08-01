@@ -473,6 +473,9 @@ struct Tuplesortstate
 	/* we need typelen in order to know how to copy the Datums. */
 	int			datumTypeLen;
 
+	int32		est_tupwidth;	/* Estimated avg width of tuples to sort */
+	int64		est_tuples;		/* Estimated number of tuples to sort */
+
 	/*
 	 * Resource snapshot for time of sort start.
 	 */
@@ -607,7 +610,9 @@ struct Sharedsort
 
 static Tuplesortstate *tuplesort_begin_common(int workMem,
 											  SortCoordinate coordinate,
-											  bool randomAccess);
+											  bool randomAccess,
+											  int32 est_tupwidth,
+											  int64 est_tuples);
 static void tuplesort_begin_batch(Tuplesortstate *state);
 static void puttuple_common(Tuplesortstate *state, SortTuple *tuple);
 static bool consider_abort_common(Tuplesortstate *state);
@@ -718,7 +723,7 @@ static void tuplesort_updatemax(Tuplesortstate *state);
 
 static Tuplesortstate *
 tuplesort_begin_common(int workMem, SortCoordinate coordinate,
-					   bool randomAccess)
+					   bool randomAccess, int32 est_tupwidth, int64 est_tuples)
 {
 	Tuplesortstate *state;
 	MemoryContext maincontext;
@@ -783,6 +788,10 @@ tuplesort_begin_common(int workMem, SortCoordinate coordinate,
 	state->memtupsize = INITIAL_MEMTUPSIZE;
 	state->memtuples = NULL;
 
+	/* Fill in any size estimates we've received */
+	state->est_tupwidth = est_tupwidth;
+	state->est_tuples = est_tuples;
+
 	/*
 	 * After all of the other non-parallel-related state, we setup all of the
 	 * state needed for each batch.
@@ -832,8 +841,21 @@ static void
 tuplesort_begin_batch(Tuplesortstate *state)
 {
 	MemoryContext oldcontext;
+	int64		mem_est;
 
 	oldcontext = MemoryContextSwitchTo(state->maincontext);
+	
+	/* Estimate the amount of memory required to perform the sort */
+	if (state->est_tuples > 0 && state->est_tupwidth > 0)
+	{
+		mem_est = pg_nextpower2_64(state->est_tuples * (state->est_tupwidth + 48));
+		mem_est = Max(mem_est, ALLOCSET_DEFAULT_INITSIZE);
+		mem_est = Min(mem_est, pg_prevpower2_64(state->allowedMem));
+	}
+	else
+	{
+		mem_est = ALLOCSET_DEFAULT_MAXSIZE;
+	}
 
 	/*
 	 * Caller tuple (e.g. IndexTuple) memory context.
@@ -844,9 +866,9 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 * in the parent context, not this context, because there is no need to
 	 * free memtuples early.
 	 */
-	state->tuplecontext = AllocSetContextCreate(state->sortcontext,
-												"Caller tuples",
-												ALLOCSET_DEFAULT_SIZES);
+	state->tuplecontext = GenerationContextCreate(state->sortcontext,
+												  "Caller tuples",
+												  (Size) mem_est);
 
 	state->status = TSS_INITIAL;
 	state->bounded = false;
@@ -897,10 +919,12 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
 					 Oid *sortOperators, Oid *sortCollations,
 					 bool *nullsFirstFlags,
-					 int workMem, SortCoordinate coordinate, bool randomAccess)
+					 int workMem, SortCoordinate coordinate,
+					 bool randomAccess, int32 est_tupwidth, int64 est_tuples)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess);
+												   randomAccess, est_tupwidth,
+												   est_tuples);
 	MemoryContext oldcontext;
 	int			i;
 
@@ -973,7 +997,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 						SortCoordinate coordinate, bool randomAccess)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess);
+												   randomAccess, 0, 0);
 	BTScanInsert indexScanKey;
 	MemoryContext oldcontext;
 	int			i;
@@ -1070,7 +1094,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 							bool randomAccess)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess);
+												   randomAccess, 0, 0);
 	BTScanInsert indexScanKey;
 	MemoryContext oldcontext;
 	int			i;
@@ -1150,7 +1174,7 @@ tuplesort_begin_index_hash(Relation heapRel,
 						   bool randomAccess)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess);
+												   randomAccess, 0, 0);
 	MemoryContext oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(state->maincontext);
@@ -1193,7 +1217,7 @@ tuplesort_begin_index_gist(Relation heapRel,
 						   bool randomAccess)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess);
+												   randomAccess, 0, 0);
 	MemoryContext oldcontext;
 	int			i;
 
@@ -1248,7 +1272,7 @@ tuplesort_begin_datum(Oid datumType, Oid sortOperator, Oid sortCollation,
 					  SortCoordinate coordinate, bool randomAccess)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess);
+												   randomAccess, 0, 0);
 	MemoryContext oldcontext;
 	int16		typlen;
 	bool		typbyval;
