@@ -295,7 +295,9 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 												   qstate->sortNullsFirsts,
 												   work_mem,
 												   NULL,
-												   qstate->rescan_needed);
+												   qstate->rescan_needed,
+												   0,
+												   0);
 	else
 		osastate->sortstate = tuplesort_begin_datum(qstate->sortColType,
 													qstate->sortOperator,
