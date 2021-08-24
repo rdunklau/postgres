@@ -226,7 +226,9 @@ extern Tuplesortstate *tuplesort_begin_datum(Oid datumType,
 											 Oid sortOperator, Oid sortCollation,
 											 bool nullsFirstFlag,
 											 int workMem, SortCoordinate coordinate,
-											 bool randomAccess);
+											 bool randomAccess,
+											 int32 est_tupwidth,
+											 int64 est_tuples);
 
 extern void tuplesort_set_bound(Tuplesortstate *state, int64 bound);
 extern bool tuplesort_used_bound(Tuplesortstate *state);

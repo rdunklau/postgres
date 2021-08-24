@@ -103,7 +103,9 @@ ExecSort(PlanState *pstate)
 												   plannode->nullsFirst[0],
 												   work_mem,
 												   NULL,
-												   node->randomAccess);
+												   node->randomAccess,
+												   plannode->plan.plan_width,
+												   (int64) plannode->plan.plan_rows);
 		else
 			tuplesortstate = tuplesort_begin_heap(tupDesc,
 												  plannode->numCols,
