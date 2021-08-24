@@ -607,7 +607,7 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 									  pertrans->sortOperators[0],
 									  pertrans->sortCollations[0],
 									  pertrans->sortNullsFirst[0],
-									  work_mem, NULL, false);
+									  work_mem, NULL, false, 0, 0);
 		}
 		else
 			pertrans->sortstates[aggstate->current_set] =

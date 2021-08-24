@@ -305,7 +305,9 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 													qstate->sortNullsFirst,
 													work_mem,
 													NULL,
-													qstate->rescan_needed);
+													qstate->rescan_needed,
+													0,
+													0);
 
 	osastate->number_of_rows = 0;
 	osastate->sort_done = false;

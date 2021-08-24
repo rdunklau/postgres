@@ -475,7 +475,8 @@ struct Tuplesortstate
 
 	int32		est_tupwidth;	/* Estimated avg width of tuples to sort */
 	int64		est_tuples;		/* Estimated number of tuples to sort */
-
+	int64		est_tuple_memory;	/* Estimated amount of memory required
+									 * to store all tuples at once */
 	/*
 	 * Resource snapshot for time of sort start.
 	 */
@@ -781,16 +782,42 @@ tuplesort_begin_common(int workMem, SortCoordinate coordinate,
 	state->sortcontext = sortcontext;
 	state->maincontext = maincontext;
 
+	/* Fill in any size estimates we've received */
+	state->est_tupwidth = est_tupwidth;
+	state->est_tuples = est_tuples;
+
+	/* Estimate the amount of memory required to perform the sort */
+	if (state->est_tuples > 0 && state->est_tupwidth > 0)
+	{
+		state->est_tuple_memory = pg_nextpower2_64(state->est_tuples * (state->est_tupwidth + 48));
+	}
+	else
+	{
+		state->est_tuple_memory = 0;
+	}
+
 	/*
 	 * Initial size of array must be more than ALLOCSET_SEPARATE_THRESHOLD;
 	 * see comments in grow_memtuples().
 	 */
 	state->memtupsize = INITIAL_MEMTUPSIZE;
-	state->memtuples = NULL;
 
-	/* Fill in any size estimates we've received */
-	state->est_tupwidth = est_tupwidth;
-	state->est_tuples = est_tuples;
+	/*
+	 * See if we can come up with a better estimate for the size of the
+	 * memtuples array.
+	 */
+	if (state->est_tuple_memory > 0 && state->est_tuples < INT_MAX)
+	{
+		int64	pow2tuples = pg_nextpower2_64(state->est_tuples);
+
+		/*
+		 * Size the array to the next power of 2 after the est_tuples if the
+		 * size of all tuples and the array are both within allowedMem.
+		 */
+		if (state->est_tuple_memory + sizeof(SortTuple) * pow2tuples < state->allowedMem)
+			state->memtupsize = Max(pow2tuples, INITIAL_MEMTUPSIZE);
+	}
+	state->memtuples = NULL;
 
 	/*
 	 * After all of the other non-parallel-related state, we setup all of the
@@ -841,21 +868,21 @@ static void
 tuplesort_begin_batch(Tuplesortstate *state)
 {
 	MemoryContext oldcontext;
-	int64		mem_est;
+	int64		blockSize;
 
 	oldcontext = MemoryContextSwitchTo(state->maincontext);
-	
-	/* Estimate the amount of memory required to perform the sort */
-	if (state->est_tuples > 0 && state->est_tupwidth > 0)
-	{
-		mem_est = pg_nextpower2_64(state->est_tuples * (state->est_tupwidth + 48));
-		mem_est = Max(mem_est, ALLOCSET_DEFAULT_INITSIZE);
-		mem_est = Min(mem_est, pg_prevpower2_64(state->allowedMem));
-	}
-	else
-	{
-		mem_est = ALLOCSET_DEFAULT_MAXSIZE;
-	}
+
+	/*
+	 * Determine a good blocksize for the generation context.  Ideally this
+	 * would be the next power of 2 after est_tuple_memory.  However, just
+	 * in case we get very small estimates, clamp it to be at least
+	 * ALLOCSET_DEFAULT_INITSIZE, but no higher than the power of 2 below
+	 * our maximum memory cap.  Also, just to prevent insane memory size
+	 * requests, cap to 1GB.
+	 */
+	blockSize = Max(state->est_tuple_memory, ALLOCSET_DEFAULT_INITSIZE);
+	blockSize = Min(blockSize, pg_prevpower2_64(state->allowedMem));
+	blockSize = Min(blockSize, ((int64) 1) * 1024 * 1024 * 1024);
 
 	/*
 	 * Caller tuple (e.g. IndexTuple) memory context.
@@ -868,7 +895,7 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 */
 	state->tuplecontext = GenerationContextCreate(state->sortcontext,
 												  "Caller tuples",
-												  (Size) mem_est);
+												  (Size) blockSize);
 
 	state->status = TSS_INITIAL;
 	state->bounded = false;
@@ -914,6 +941,22 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	MemoryContextSwitchTo(oldcontext);
 }
 
+/*
+ * tuplesort_begin_heap
+ *		Setup and return a Tuplesortstate for sorting heap tuples
+ *
+ * Inputs:
+ *	'tupDesc' TupleDesc for tuples to be sorted
+ *	'nkeys' Number of sort keys
+ *	'attNums' array of attribute numbers, one element per sort key
+ *	'sortOperators' array of sort operators, one element per sort key
+ *	'nullsFirstFlags' NULLS FIRST property, one element per sort key
+ *	'workMem' maximum kilobytes of memory for sort before spilling to disk
+ *	'coordinate' parallel sort coordination struct
+ *	'randomAccess' true if caller needs to access sorted tuples non-linearly
+ *	'est_tupwidth' estimated width of tuples in bytes, or 0 if unknown
+ *	'est_tuples' estimated number of tuples to sort, or 0 if unknown
+ */
 Tuplesortstate *
 tuplesort_begin_heap(TupleDesc tupDesc,
 					 int nkeys, AttrNumber *attNums,
@@ -1269,10 +1312,12 @@ tuplesort_begin_index_gist(Relation heapRel,
 Tuplesortstate *
 tuplesort_begin_datum(Oid datumType, Oid sortOperator, Oid sortCollation,
 					  bool nullsFirstFlag, int workMem,
-					  SortCoordinate coordinate, bool randomAccess)
+					  SortCoordinate coordinate, bool randomAccess,
+					  int32 est_tupwidth, int64 est_tuples)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
-												   randomAccess, 0, 0);
+												   randomAccess, est_tupwidth,
+												   est_tuples);
 	MemoryContext oldcontext;
 	int16		typlen;
 	bool		typbyval;
