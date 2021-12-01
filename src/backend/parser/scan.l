@@ -351,6 +351,10 @@ typecast		"::"
 dot_dot			\.\.
 colon_equals	":="
 
+/* lbrace, rbrace are assigned token names to play nice with ECPG */
+lbrace {
+rbrace }
+
 /*
  * These operator-like tokens (unlike the above ones) also match the {operator}
  * rule, which means that they might be overridden by a longer match if they
@@ -375,7 +379,7 @@ not_equals		"!="
  * If you change either set, adjust the character lists appearing in the
  * rule for "operator"!
  */
-self			[,()\[\].;\:\+\-\*\/\%\^\<\>\=]
+self			[,()\[\].;\:\|\+\-\*\/\%\^\<\>\=]
 op_chars		[\~\!\@\#\^\&\|\`\?\+\-\*\/\%\<\>\=]
 operator		{op_chars}+
 

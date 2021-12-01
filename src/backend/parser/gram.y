@@ -1,6 +1,6 @@
 %{
 
-/*#define YYDEBUG 1*/
+#define YYDEBUG 1
 /*-------------------------------------------------------------------------
  *
  * gram.y
@@ -534,7 +534,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <sortby>	sortby
 %type <ielem>	index_elem index_elem_options
 %type <selem>	stats_param
-%type <node>	table_ref
+%type <node>	table_ref non_joined_table_ref
 %type <jexpr>	joined_table
 %type <range>	relation_expr
 %type <range>	extended_relation_expr
@@ -633,6 +633,11 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <list>		hash_partbound
 %type <defelt>		hash_partbound_elem
 
+%type <node> match_recognize match_pattern match_pattern_elem match_skip_clause
+	match_define_elem match_pattern_elem_quantifier
+%type <list> match_measures_clause match_define measure_list
+%type <ival> match_out_mode
+%type <target> measure_el
 
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
@@ -676,7 +681,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR CYCLE
 
 	DATA_P DATABASE DAY_P DEALLOCATE DEC DECIMAL_P DECLARE DEFAULT DEFAULTS
-	DEFERRABLE DEFERRED DEFINER DELETE_P DELIMITER DELIMITERS DEPENDS DEPTH DESC
+	DEFERRABLE DEFERRED DEFINE DEFINER DELETE_P DELIMITER DELIMITERS DEPENDS DEPTH DESC
 	DETACH DICTIONARY DISABLE_P DISCARD DISTINCT DO DOCUMENT_P DOMAIN_P
 	DOUBLE_P DROP
 
@@ -704,19 +709,20 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
-	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATCH_RECOGNIZE MATERIALIZED MAXVALUE MEASURES METHOD MINUTE_P
+	MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NFC NFD NFKC NFKD NO NONE
 	NORMALIZE NORMALIZED
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
 	NULLS_P NUMERIC
 
-	OBJECT_P OF OFF OFFSET OIDS OLD ON ONLY OPERATOR OPTION OPTIONS OR
+	OBJECT_P OF OFF OFFSET OIDS OLD ON ONE ONLY OPERATOR OPTION OPTIONS OR
 	ORDER ORDINALITY OTHERS OUT_P OUTER_P
 	OVER OVERLAPS OVERLAY OVERRIDING OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
-	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
+	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PAST PATTERN PER PLACING PLANS
+	POLICY POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROCEDURES PROGRAM PUBLICATION
 
 	QUOTE
@@ -789,6 +795,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %nonassoc	'<' '>' '=' LESS_EQUALS GREATER_EQUALS NOT_EQUALS
 %nonassoc	BETWEEN IN_P LIKE ILIKE SIMILAR NOT_LA
 %nonassoc	ESCAPE			/* ESCAPE must be just above LIKE/ILIKE/SIMILAR */
+
+/* Give PATTERN_ALTERNATION a lower precedence than IDENT*/
+%left	PATTERN_ALTERNATION
+
 /*
  * To support target_el without AS, it used to be necessary to assign IDENT an
  * explicit precedence just less than Op.  While that's not really necessary
@@ -813,10 +823,20 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  * an explicit priority lower than '(', so that a rule with CUBE '(' will shift
  * rather than reducing a conflicting rule that takes CUBE as a function name.
  * Using the same precedence as IDENT seems right for the reasons given above.
+ *
+ * To support PATTERN, AFTER MATCH SKIP.. and ONE / ALL ROWS per match in MATCH_RECOGNIZE without reserving it, we also must
+ * give them a lower priority, while raising the priority of an unlabeled expr in
+ * the measure clause.
  */
+
 %nonassoc	UNBOUNDED		/* ideally would have same precedence as IDENT */
 %nonassoc	IDENT PARTITION RANGE ROWS GROUPS PRECEDING FOLLOWING CUBE ROLLUP
-%left		Op OPERATOR		/* multi-character ops and user-defined operators */
+	PATTERN AFTER ALL ONE
+
+/* Keep '|' operator the same as it was. It is only an operator for the purpose
+ * of row patterns. */
+%left		Op OPERATOR '|'		/* multi-character ops and user-defined operators */
+%left		PATTERN_CONCATENATION
 %left		'+' '-'
 %left		'*' '/' '%'
 %left		'^'
@@ -825,9 +845,13 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %left		COLLATE
 %right		UMINUS
 %left		'[' ']'
+%left		lbrace rbrace
+%right	'?'
 %left		'(' ')'
 %left		TYPECAST
 %left		'.'
+
+
 /*
  * These might seem to be low-precedence, but actually they are not part
  * of the arithmetic hierarchy at all in their use as JOIN operators.
@@ -836,6 +860,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  * left-associativity among the JOIN rules themselves.
  */
 %left		JOIN CROSS LEFT FULL RIGHT INNER_P NATURAL
+
 
 %%
 
@@ -12253,10 +12278,8 @@ from_list:
 			| from_list ',' table_ref				{ $$ = lappend($1, $3); }
 		;
 
-/*
- * table_ref is where an alias clause can be attached.
- */
-table_ref:	relation_expr opt_alias_clause
+
+non_joined_table_ref:	relation_expr opt_alias_clause
 				{
 					$1->alias = $2;
 					$$ = (Node *) $1;
@@ -12287,6 +12310,12 @@ table_ref:	relation_expr opt_alias_clause
 			| xmltable opt_alias_clause
 				{
 					RangeTableFunc *n = (RangeTableFunc *) $1;
+					n->alias = $2;
+					$$ = (Node *) n;
+				}
+			| match_recognize opt_alias_clause
+				{
+					RangeMatchRecognize *n = (RangeMatchRecognize *) $1;
 					n->alias = $2;
 					$$ = (Node *) n;
 				}
@@ -12356,6 +12385,17 @@ table_ref:	relation_expr opt_alias_clause
 									 parser_errposition(@2)));
 					}
 					$$ = (Node *) n;
+				}
+		;
+
+
+/*
+ * table_ref is where an alias clause can be attached.
+ */
+table_ref:
+			non_joined_table_ref
+				{
+					$$ = (Node *) $1;
 				}
 			| joined_table
 				{
@@ -12945,6 +12985,245 @@ xml_namespace_el:
 				}
 		;
 
+/*
+ * MATCH_RECOGNIZE
+ */
+match_recognize:
+			non_joined_table_ref MATCH_RECOGNIZE '(' opt_partition_clause opt_sort_clause
+			match_measures_clause match_out_mode match_skip_clause match_pattern
+			DEFINE match_define ')'
+				{
+				  RangeMatchRecognize *n = makeNode(RangeMatchRecognize);
+					n->relation = $1;
+					n->partitionClause = $4;
+					n->sortClause = $5;
+					n->measureClause = $6;
+					n->outputMode = $7;
+					n->skipClause = (MatchSkipClause *) $8;
+					n->pattern = (RowPattern *) $9;
+					n->defineList = $11;
+					$$ = (Node *) n;
+				}
+		;
+/*
+match_recognize:
+			non_joined_table_ref MATCH_RECOGNIZE '(' match_measures_clause match_pattern ')'
+				{
+				  RangeMatchRecognize *n = makeNode(RangeMatchRecognize);
+					n->relation = $1;
+					n->measureClause = $4;
+					$$ = (Node *) n;
+				}
+		;
+*/
+
+match_measures_clause:
+			MEASURES measure_list { $$ = $2 ; }
+			| /*EMPTY*/ { $$ = NIL; }
+		;
+
+measure_list:
+			measure_el	{ $$ = list_make1($1); }
+			| measure_list ',' measure_el { $$ = lappend($1, $3); }
+		;
+
+measure_el:	b_expr AS ColLabel
+				{
+					$$ = makeNode(ResTarget);
+					$$->name = $3;
+					$$->indirection = NIL;
+					$$->val = (Node *) $1;
+					$$->location = @1;
+				}
+			| b_expr BareColLabel
+			  {
+					$$ = makeNode(ResTarget);
+					$$->name = $2;
+					$$->indirection = NIL;
+					$$->val = (Node *)$1;
+					$$->location = @1;
+				}
+			| b_expr %prec UMINUS
+				{
+					$$ = makeNode(ResTarget);
+					$$->name = NULL;
+					$$->indirection = NIL;
+					$$->val = (Node *)$1;
+				}
+		;
+
+match_out_mode: /* Fixme: empty mode */
+			ONE ROW PER MATCH {
+				$$ = ONE_ROW_PER_MATCH;
+			}
+			| ALL ROWS PER MATCH {
+				$$ = ALL_ROWS_PER_MATCH;
+			}
+			| /*EMPTY*/ {
+				$$ = ONE_ROW_PER_MATCH;
+			}
+		;
+
+match_skip_clause:
+			AFTER MATCH SKIP PAST LAST_P ROW %prec AFTER { 
+				MatchSkipClause * n = makeNode(MatchSkipClause);
+				n->mode = MATCHSKIPMODE_PAST_LASTROW;
+				n->symbol = NULL;
+				$$ = (Node *) n;
+			}
+			| AFTER MATCH SKIP PAST FIRST_P ROW %prec AFTER {
+				MatchSkipClause * n = makeNode(MatchSkipClause);
+				n->mode = MATCHSKIPMODE_PAST_FIRSTROW;
+				n->symbol = NULL;
+				$$ = (Node *) n;
+			}
+			| AFTER MATCH SKIP TO FIRST_P ColId %prec AFTER {
+				MatchSkipClause * n = makeNode(MatchSkipClause);
+				n->mode = MATCHSKIPMODE_TO_FIRSTSYMBOL;
+				n->symbol = $6;
+				$$ = (Node *) n;
+			}
+			| AFTER MATCH SKIP TO LAST_P ColId %prec AFTER {
+				MatchSkipClause * n = makeNode(MatchSkipClause);
+				n->mode = MATCHSKIPMODE_TO_FIRSTSYMBOL;
+				n->symbol = $6;
+				$$ = (Node *) n;
+			}
+			| /*EMPTY*/ {
+				MatchSkipClause * n = makeNode(MatchSkipClause);
+				n->mode = MATCHSKIPMODE_PAST_LASTROW;
+				n->symbol = NULL;
+				$$ = (Node *) n;
+			}
+		;
+
+match_pattern: /* FIXME do it */
+			PATTERN '(' match_pattern_elem ')' %prec PATTERN {
+				$$ = $3;
+			}
+			| PATTERN '(' ')' %prec PATTERN {
+				RowPattern * n = makeNode(RowPattern);
+				n->kind = ROWPATTERN_EMPTY;
+				$$ = (Node *) n;
+			}
+		;
+match_pattern_elem:
+			IDENT  {
+				RowPattern* n = makeNode(RowPattern);
+				n->kind = ROWPATTERN_VARREF;
+				n->args = list_make1(makeString($1));
+				$$ = (Node *) n;
+			}
+			| match_pattern_elem match_pattern_elem %prec PATTERN_CONCATENATION {
+				RowPattern*n = makeNode(RowPattern);
+				n->kind = ROWPATTERN_CONCATENATION;
+				n->args = list_make2($1, $2);
+				$$ = (Node *) n;
+			}
+			| match_pattern_elem '|' match_pattern_elem %prec PATTERN_ALTERNATION {
+				RowPattern*n = makeNode(RowPattern);
+				n->kind = ROWPATTERN_ALTERNATION;
+				n->args = list_make2($1, $3);
+				$$ = (Node *) n;
+			}
+			| '(' match_pattern_elem ')' {
+				$$ = $2;
+			}
+			| match_pattern_elem match_pattern_elem_quantifier %prec UMINUS {
+				RowPattern* n = (RowPattern*) $2;
+				n->args = list_make1($1);
+				$$ = (Node *) n;
+			}
+		;
+
+match_pattern_elem_quantifier:
+			'*' {
+				RowPattern*n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = (Node*) makeInteger(0);
+				n->indices->uidx = NULL;
+				n->reluctant = false;
+				$$ = (Node *) n;			}
+			| '+' {
+				RowPattern *n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = (Node*) makeInteger(1);
+				n->indices->uidx = NULL;
+				n->reluctant = false;
+				$$ = (Node *) n;
+			}
+			| '?' {
+				RowPattern *n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = (Node*) makeInteger(0);
+				n->indices->uidx = (Node*) makeInteger(1);
+				n->reluctant = false;
+				$$ = (Node *) n;
+			}
+			| lbrace Iconst rbrace {
+				RowPattern *n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = (Node*) makeInteger($2);
+				n->indices->uidx = (Node*) makeInteger($2);
+				n->reluctant = false;
+				$$ = (Node *) n;
+			}
+			| lbrace Iconst ',' rbrace {
+				RowPattern *n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = (Node*) makeInteger($2);
+				n->indices->uidx = NULL;
+				n->reluctant = false;
+				$$ = (Node *) n;
+			}
+			| lbrace Iconst ',' Iconst rbrace {
+				RowPattern *n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = (Node*) makeInteger($2);
+				n->indices->uidx = (Node*) makeInteger($4);
+				n->reluctant = false;
+				$$ = (Node *) n;
+			}
+			| lbrace ',' Iconst rbrace {
+				RowPattern *n = makeNode(RowPattern);
+				n->indices = makeNode(A_Indices);
+				n->kind = ROWPATTERN_QUANTIFIER;
+				n->indices->lidx = NULL;
+				n->indices->uidx = (Node*) makeInteger($3);
+				n->reluctant = false;
+				$$ = (Node *) n;
+			}
+			| match_pattern_elem_quantifier '?' {
+				RowPattern *n = (RowPattern *) $1;
+				n->reluctant = true;
+				$$ = (Node *) n;
+			}
+		;
+
+match_define:
+			match_define_elem {
+				$$ = list_make1($1);
+			}
+			| match_define ',' match_define_elem {
+				$$ = lappend($1, $3);
+			}
+		;
+match_define_elem:
+			ColId AS a_expr {
+				RowPatternVar *n = makeNode(RowPatternVar);
+				n->name = $1;
+				n->expr = $3;
+				$$ = (Node *) n;
+			}
+		;
+
+
 /*****************************************************************************
  *
  *	Type syntax
@@ -13481,6 +13760,8 @@ a_expr:		c_expr									{ $$ = $1; }
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, ">", $1, $3, @2); }
 			| a_expr '=' a_expr
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "=", $1, $3, @2); }
+			| a_expr '|' a_expr
+				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "|", $1, $3, @2); }
 			| a_expr LESS_EQUALS a_expr
 				{ $$ = (Node *) makeSimpleA_Expr(AEXPR_OP, "<=", $1, $3, @2); }
 			| a_expr GREATER_EQUALS a_expr
@@ -15697,6 +15978,7 @@ unreserved_keyword:
 			| DECLARE
 			| DEFAULTS
 			| DEFERRED
+			| DEFINE
 			| DEFINER
 			| DELETE_P
 			| DELIMITER
@@ -15781,6 +16063,7 @@ unreserved_keyword:
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| MEASURES
 			| METHOD
 			| MINUTE_P
 			| MINVALUE
@@ -15806,6 +16089,7 @@ unreserved_keyword:
 			| OFF
 			| OIDS
 			| OLD
+			| ONE
 			| OPERATOR
 			| OPTION
 			| OPTIONS
@@ -15821,6 +16105,9 @@ unreserved_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+			| PAST
+			| PATTERN
+			| PER
 			| PLANS
 			| POLICY
 			| PRECEDING
@@ -16033,6 +16320,7 @@ type_func_name_keyword:
 			| JOIN
 			| LEFT
 			| LIKE
+			| MATCH_RECOGNIZE
 			| NATURAL
 			| NOTNULL
 			| OUTER_P
@@ -16235,6 +16523,7 @@ bare_label_keyword:
 			| DEFAULTS
 			| DEFERRABLE
 			| DEFERRED
+			| DEFINE
 			| DEFINER
 			| DELETE_P
 			| DELIMITER
@@ -16348,6 +16637,7 @@ bare_label_keyword:
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| MEASURES
 			| METHOD
 			| MINVALUE
 			| MODE
@@ -16380,6 +16670,7 @@ bare_label_keyword:
 			| OFF
 			| OIDS
 			| OLD
+			| ONE
 			| ONLY
 			| OPERATOR
 			| OPTION
@@ -16399,6 +16690,9 @@ bare_label_keyword:
 			| PARTITION
 			| PASSING
 			| PASSWORD
+			| PAST
+			| PATTERN
+			| PER
 			| PLACING
 			| PLANS
 			| POLICY

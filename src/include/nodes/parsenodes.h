@@ -258,6 +258,7 @@ typedef struct ParamRef
 	int			location;		/* token location, or -1 if unknown */
 } ParamRef;
 
+
 /*
  * A_Expr - infix, prefix, and postfix expressions
  */
@@ -646,6 +647,49 @@ typedef struct RangeTableSample
 	Node	   *repeatable;		/* REPEATABLE expression, or NULL if none */
 	int			location;		/* method name location, or -1 if unknown */
 } RangeTableSample;
+
+
+
+typedef struct RowPatternVar
+{
+	NodeTag	type;
+	char* name;
+	Node* expr;
+} RowPatternVar;
+
+typedef struct RowPattern
+{
+	NodeTag type;
+	RowPatternKind kind;
+
+	/* Args used for most types */
+	List	*args;
+
+	/* For anchor */
+	RowPatternAnchorKind anchor_kind;
+
+	/* For quantifier */
+	A_Indices	*indices;
+	bool		reluctant;
+} RowPattern;
+
+/*
+ * RangeMatchRecognize - represents a MATCH_RECOGNIZE ... clause
+ */
+typedef struct RangeMatchRecognize
+{
+	NodeTag					type;
+	Node					*relation;
+	List					*partitionClause;
+	List					*sortClause;
+	List					*measureClause;
+	MatchRecognizeOutMode	outputMode;
+	MatchSkipClause			*skipClause;
+	RowPattern					*pattern;
+	List					*defineList;
+	Alias					*alias;
+} RangeMatchRecognize;
+
 
 /*
  * ColumnDef - column definition (used in various creates)

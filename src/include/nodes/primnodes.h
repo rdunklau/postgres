@@ -1592,4 +1592,45 @@ typedef struct OnConflictExpr
 	List	   *exclRelTlist;	/* tlist of the EXCLUDED pseudo relation */
 } OnConflictExpr;
 
+
+typedef enum MatchRecognizeOutMode
+{
+	ONE_ROW_PER_MATCH,
+	ALL_ROWS_PER_MATCH
+} MatchRecognizeOutMode;
+
+typedef enum MatchRecognizeSkipMode
+{
+	MATCHSKIPMODE_PAST_LASTROW,
+	MATCHSKIPMODE_PAST_FIRSTROW,
+	MATCHSKIPMODE_TO_FIRSTSYMBOL,
+	MATCHSKIPMODE_TO_LASTSYMBOL
+} MatchRecognizeSkipMode;
+
+typedef struct MatchSkipClause
+{
+	NodeTag		type;
+	MatchRecognizeSkipMode mode;
+	char*		symbol;
+} MatchSkipClause;
+
+typedef enum RowPatternKind
+{
+	ROWPATTERN_VARREF,
+	ROWPATTERN_CONCATENATION,
+	ROWPATTERN_ALTERNATION,
+	ROWPATTERN_QUANTIFIER,
+	ROWPATTERN_GROUPING,
+	ROWPATTERN_PERMUTE,
+	ROWPATTERN_EXCLUDE,
+	ROWPATTERN_ANCHOR,
+	ROWPATTERN_EMPTY
+} RowPatternKind;
+
+typedef enum RowPatternAnchorKind
+{
+	ROWPATTERNANCHOR_START,
+	ROWPATTERNANCHOR_END
+} RowPatternAnchorKind;
+
 #endif							/* PRIMNODES_H */

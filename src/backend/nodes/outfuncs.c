@@ -3833,6 +3833,26 @@ _outPartitionRangeDatum(StringInfo str, const PartitionRangeDatum *node)
 	WRITE_LOCATION_FIELD(location);
 }
 
+static void
+_outRowPattern(StringInfo str, const RowPattern *node)
+{
+	WRITE_NODE_TYPE("ROWPATTERN");
+	WRITE_ENUM_FIELD(kind, RowPatternKind);
+	WRITE_NODE_FIELD(args);
+	switch (node->kind)
+	{
+		case ROWPATTERN_QUANTIFIER:
+			WRITE_NODE_FIELD(indices);
+			WRITE_BOOL_FIELD(reluctant);
+			break;
+		case ROWPATTERN_ANCHOR:
+			WRITE_ENUM_FIELD(anchor_kind, RowPatternAnchorKind);
+			break;
+		default:
+			break;
+	}
+}
+
 /*
  * outNode -
  *	  converts a Node into ascii string and append it to 'str'
@@ -4535,7 +4555,9 @@ outNode(StringInfo str, const void *obj)
 			case T_PartitionRangeDatum:
 				_outPartitionRangeDatum(str, obj);
 				break;
-
+			case T_RowPattern:
+				_outRowPattern(str, obj);
+				break;
 			default:
 
 				/*

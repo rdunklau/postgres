@@ -1137,6 +1137,17 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		/* Transform TABLESAMPLE details and attach to the RTE */
 		rte->tablesample = transformRangeTableSample(pstate, rts);
 		return rel;
+	} 
+	else if (IsA(n, RangeMatchRecognize))
+	{
+		/* MATCH_RECOGNIZE clause */
+		RangeMatchRecognize *m = (RangeMatchRecognize *) n;
+		elog(NOTICE, "Pattern is: %s", nodeToString(m->pattern));
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("MATCH_RECOGNIZE clause is not supported yet"),
+				 parser_errposition(pstate, exprLocation(m->relation))));
+
 	}
 	else if (IsA(n, JoinExpr))
 	{
