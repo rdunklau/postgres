@@ -41,6 +41,7 @@
 #include "lib/ilist.h"
 #include "utils/memdebug.h"
 #include "utils/memutils.h"
+#include "pg_trace.h"
 
 
 #define Generation_BLOCKHDRSZ	MAXALIGN(sizeof(GenerationBlock))
@@ -278,7 +279,7 @@ GenerationContextCreate(MemoryContext parent,
 						&GenerationMethods,
 						parent,
 						name);
-
+	TRACE_POSTGRESQL_GENERATION_ALLOC_CREATE();
 	return (MemoryContext) set;
 }
 
@@ -313,8 +314,9 @@ GenerationReset(MemoryContext context)
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(block, block->blksize);
 #endif
-
+		TRACE_POSTGRESQL_GENERATION_ALLOC_FREE(block->blksize);
 		free(block);
+
 	}
 
 	set->block = NULL;
@@ -335,6 +337,7 @@ GenerationDelete(MemoryContext context)
 {
 	/* Reset to release all the GenerationBlocks */
 	GenerationReset(context);
+	TRACE_POSTGRESQL_GENERATION_ALLOC_DESTROY();
 	/* And free the context header */
 	free(context);
 }
@@ -458,6 +461,7 @@ GenerationAlloc(MemoryContext context, Size size)
 			blksize <<= 1;
 
 		block = (GenerationBlock *) malloc(blksize);
+		TRACE_POSTGRESQL_GENERATION_ALLOC_MALLOC(blksize);
 
 		if (block == NULL)
 			return NULL;
@@ -596,6 +600,7 @@ GenerationFree(MemoryContext context, void *pointer)
 	dlist_delete(&block->node);
 
 	context->mem_allocated -= block->blksize;
+	TRACE_POSTGRESQL_GENERATION_ALLOC_FREE(block->blksize);
 	free(block);
 }
 
