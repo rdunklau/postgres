@@ -1137,11 +1137,16 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		/* Transform TABLESAMPLE details and attach to the RTE */
 		rte->tablesample = transformRangeTableSample(pstate, rts);
 		return rel;
-	} 
+	}
 	else if (IsA(n, RangeMatchRecognize))
 	{
 		/* MATCH_RECOGNIZE clause */
 		RangeMatchRecognize *m = (RangeMatchRecognize *) n;
+		Node * rel;
+		/* Recursively transform the input relation */
+		rel = transformFromClauseItem(pstate, m->relation, top_nsitem, namespace);
+
+		/* Transform the clause itself. */
 		elog(NOTICE, "Pattern is: %s", nodeToString(m->pattern));
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),

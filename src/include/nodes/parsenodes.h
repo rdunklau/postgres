@@ -685,7 +685,7 @@ typedef struct RangeMatchRecognize
 	List					*measureClause;
 	MatchRecognizeOutMode	outputMode;
 	MatchSkipClause			*skipClause;
-	RowPattern					*pattern;
+	RowPattern				*pattern;
 	List					*defineList;
 	Alias					*alias;
 } RangeMatchRecognize;
@@ -1040,9 +1040,10 @@ typedef enum RTEKind
 	RTE_VALUES,					/* VALUES (<exprlist>), (<exprlist>), ... */
 	RTE_CTE,					/* common table expr (WITH list element) */
 	RTE_NAMEDTUPLESTORE,		/* tuplestore, e.g. for AFTER triggers */
-	RTE_RESULT					/* RTE represents an empty FROM clause; such
+	RTE_RESULT,					/* RTE represents an empty FROM clause; such
 								 * RTEs are added by the planner, they're not
 								 * present during parsing or rewriting */
+	RTE_MATCH_RECOGNIZE			/* MATCH_RECOGNIZE () output relation */
 } RTEKind;
 
 typedef struct RangeTblEntry
@@ -1190,6 +1191,10 @@ typedef struct RangeTblEntry
 	 */
 	char	   *enrname;		/* name of ephemeral named relation */
 	Cardinality	enrtuples;		/* estimated or actual from caller */
+
+	/*
+	 * Fields valid for MATCH_RECOGNIZE RTEs
+	 */
 
 	/*
 	 * Fields valid in all RTEs:
