@@ -844,7 +844,7 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 * in the parent context, not this context, because there is no need to
 	 * free memtuples early.
 	 */
-	state->tuplecontext = AllocSetContextCreate(state->sortcontext,
+	state->tuplecontext = GenerationContextCreate(state->sortcontext,
 												"Caller tuples",
 												ALLOCSET_DEFAULT_SIZES);
 
