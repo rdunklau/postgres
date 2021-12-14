@@ -322,9 +322,6 @@ GenerationReset(MemoryContext context)
 	set->block = NULL;
 	set->keeper = NULL;
 
-	/* Reset block size allocation sequence, too */
-	set->nextBlockSize = set->initBlockSize;
-
 	Assert(dlist_is_empty(&set->blocks));
 }
 
