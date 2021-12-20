@@ -235,6 +235,10 @@ static bool check_recovery_target_lsn(char **newval, void **extra, GucSource sou
 static void assign_recovery_target_lsn(const char *newval, void *extra);
 static bool check_primary_slot_name(char **newval, void **extra, GucSource source);
 static bool check_default_with_oids(bool *newval, void **extra, GucSource source);
+static void assign_work_mem(int newval, void* extra);
+
+static void check_reserved_prefixes(const char *varName);
+static List *reserved_class_prefix = NIL;
 
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
@@ -2439,7 +2443,7 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&work_mem,
 		4096, 64, MAX_KILOBYTES,
-		NULL, NULL, NULL
+		NULL, &assign_work_mem, NULL
 	},
 
 	{
@@ -12570,6 +12574,7 @@ check_primary_slot_name(char **newval, void **extra, GucSource source)
 	return true;
 }
 
+
 static bool
 check_default_with_oids(bool *newval, void **extra, GucSource source)
 {
@@ -12583,6 +12588,13 @@ check_default_with_oids(bool *newval, void **extra, GucSource source)
 	}
 
 	return true;
+}
+
+static void
+assign_work_mem(int newval, void* extra)
+{
+	work_mem = newval;
+	MallocAdjustSettings();
 }
 
 #include "guc-file.c"
