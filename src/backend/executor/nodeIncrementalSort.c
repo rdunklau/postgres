@@ -315,7 +315,7 @@ switchToPresortedPrefixMode(PlanState *pstate)
 												&(plannode->sort.nullsFirst[nPresortedCols]),
 												work_mem,
 												NULL,
-												false, 0, 0);
+												false, 0, 0.0);
 		node->prefixsort_state = prefixsort_state;
 	}
 	else
@@ -616,7 +616,7 @@ ExecIncrementalSort(PlanState *pstate)
 												  plannode->sort.nullsFirst,
 												  work_mem,
 												  NULL,
-												  false, 0, 0);
+												  false, 0, 0.0);
 			node->fullsort_state = fullsort_state;
 		}
 		else

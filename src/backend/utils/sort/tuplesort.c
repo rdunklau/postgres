@@ -316,6 +316,7 @@ struct Tuplesortstate
 	SortTuple  *memtuples;		/* array of SortTuple structs */
 	int			memtupcount;	/* number of tuples currently present */
 	int			memtupsize;		/* allocated length of memtuples array */
+	int			initial_memtupsize;	/* initial size for memtuples array */
 	bool		growmemtuples;	/* memtuples' growth still underway? */
 
 	/*
@@ -474,8 +475,8 @@ struct Tuplesortstate
 	int			datumTypeLen;
 
 	int32		est_tupwidth;	/* Estimated avg width of tuples to sort */
-	int64		est_tuples;		/* Estimated number of tuples to sort */
-	int64		est_tuple_memory;	/* Estimated amount of memory required
+	double		est_tuples;		/* Estimated number of tuples to sort */
+	double		est_tuple_memory;	/* Estimated amount of memory required
 									 * to store all tuples at once */
 	/*
 	 * Resource snapshot for time of sort start.
@@ -613,7 +614,7 @@ static Tuplesortstate *tuplesort_begin_common(int workMem,
 											  SortCoordinate coordinate,
 											  bool randomAccess,
 											  int32 est_tupwidth,
-											  int64 est_tuples);
+											  double est_tuples);
 static void tuplesort_begin_batch(Tuplesortstate *state);
 static void puttuple_common(Tuplesortstate *state, SortTuple *tuple);
 static bool consider_abort_common(Tuplesortstate *state);
@@ -724,7 +725,7 @@ static void tuplesort_updatemax(Tuplesortstate *state);
 
 static Tuplesortstate *
 tuplesort_begin_common(int workMem, SortCoordinate coordinate,
-					   bool randomAccess, int32 est_tupwidth, int64 est_tuples)
+					   bool randomAccess, int32 est_tupwidth, double est_tuples)
 {
 	Tuplesortstate *state;
 	MemoryContext maincontext;
@@ -787,37 +788,47 @@ tuplesort_begin_common(int workMem, SortCoordinate coordinate,
 	state->est_tuples = est_tuples;
 
 	/* Estimate the amount of memory required to perform the sort */
-	if (state->est_tuples > 0 && state->est_tupwidth > 0)
-	{
-		state->est_tuple_memory = pg_nextpower2_64(state->est_tuples * (state->est_tupwidth + 48));
-	}
+	if (est_tuples > 0.0 && est_tupwidth > 0)
+		state->est_tuple_memory = est_tuples * (est_tupwidth + 48);
 	else
-	{
-		state->est_tuple_memory = 0;
-	}
+		state->est_tuple_memory = 0.0;
 
 	/*
 	 * Initial size of array must be more than ALLOCSET_SEPARATE_THRESHOLD;
 	 * see comments in grow_memtuples().
 	 */
-	state->memtupsize = INITIAL_MEMTUPSIZE;
+	state->initial_memtupsize = INITIAL_MEMTUPSIZE;
 
 	/*
 	 * See if we can come up with a better estimate for the size of the
 	 * memtuples array.
 	 */
-	if (state->est_tuple_memory > 0 && state->est_tuples < INT_MAX)
+	if (state->est_tuple_memory > 0.0 && est_tuples < INT_MAX)
 	{
-		int64	pow2tuples = pg_nextpower2_64(state->est_tuples);
+		int64	pow2tuples = pg_nextpower2_64((int64) est_tuples);
 
 		/*
-		 * Size the array to the next power of 2 after the est_tuples if the
-		 * size of all tuples and the array are both within allowedMem.
+		 * Attempt to set the initial_memtupsize at a size that will fit all tuples.
+		 * In cases where we expect to exceed allowedMem, we'll choose an
+		 * initial_memtupsize based on the percentage of the tuples we expect to
+		 * be able to sort in a single batch.
 		 */
 		if (state->est_tuple_memory + sizeof(SortTuple) * pow2tuples < state->allowedMem)
-			state->memtupsize = Max(pow2tuples, INITIAL_MEMTUPSIZE);
+			state->initial_memtupsize = Max(pow2tuples, INITIAL_MEMTUPSIZE);
+		else
+		{
+			state->initial_memtupsize = pg_prevpower2_64(est_tuples * (state->allowedMem / state->est_tuple_memory));
+
+			/*
+			 * Cap at pow2tuples for when est_tuple_memory is just smaller
+			 * than allowedMem.
+			 */
+			state->initial_memtupsize = Min(state->initial_memtupsize, pow2tuples);
+		}
 	}
+
 	state->memtuples = NULL;
+	state->memtupsize = state->initial_memtupsize;
 
 	/*
 	 * After all of the other non-parallel-related state, we setup all of the
@@ -869,6 +880,7 @@ tuplesort_begin_batch(Tuplesortstate *state)
 {
 	MemoryContext oldcontext;
 	int64		blockSize;
+	int64		tuparraymem = sizeof(SortTuple) * state->initial_memtupsize;
 
 	oldcontext = MemoryContextSwitchTo(state->maincontext);
 
@@ -877,12 +889,21 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 * would be the next power of 2 after est_tuple_memory.  However, just
 	 * in case we get very small estimates, clamp it to be at least
 	 * ALLOCSET_DEFAULT_INITSIZE, but no higher than the power of 2 below
-	 * our maximum memory cap.  Also, just to prevent insane memory size
-	 * requests, cap to 1GB.
+	 * our maximum memory cap.  Also, to prevent insane memory size requests,
+	 * cap to MaxAllocSize.
 	 */
-	blockSize = Max(state->est_tuple_memory, ALLOCSET_DEFAULT_INITSIZE);
-	blockSize = Min(blockSize, pg_prevpower2_64(state->allowedMem));
-	blockSize = Min(blockSize, ((int64) 1) * 1024 * 1024 * 1024);
+	if (state->est_tuple_memory > 0.0)
+	{
+		blockSize = pg_nextpower2_64((int64) Min(state->est_tuple_memory, MaxAllocSize));
+		blockSize = Max(blockSize, ALLOCSET_DEFAULT_INITSIZE);
+	}
+	else
+		blockSize = ALLOCSET_DEFAULT_INITSIZE;
+
+	/* don't exceed allowedMem */
+	blockSize = Min(blockSize, pg_prevpower2_64(state->allowedMem - tuparraymem));
+	/* allowedMem might be greater than MaxAllocSize */
+	blockSize = Min(blockSize, MaxAllocSize);
 
 	/*
 	 * Caller tuple (e.g. IndexTuple) memory context.
@@ -913,11 +934,11 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 */
 	state->growmemtuples = true;
 	state->slabAllocatorUsed = false;
-	if (state->memtuples != NULL && state->memtupsize != INITIAL_MEMTUPSIZE)
+	if (state->memtuples != NULL && state->memtupsize != state->initial_memtupsize)
 	{
 		pfree(state->memtuples);
 		state->memtuples = NULL;
-		state->memtupsize = INITIAL_MEMTUPSIZE;
+		state->memtupsize = state->initial_memtupsize;
 	}
 	if (state->memtuples == NULL)
 	{
@@ -963,7 +984,7 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 					 Oid *sortOperators, Oid *sortCollations,
 					 bool *nullsFirstFlags,
 					 int workMem, SortCoordinate coordinate,
-					 bool randomAccess, int32 est_tupwidth, int64 est_tuples)
+					 bool randomAccess, int32 est_tupwidth, double est_tuples)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
 												   randomAccess, est_tupwidth,

@@ -297,7 +297,7 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 												   NULL,
 												   qstate->rescan_needed,
 												   0,
-												   0);
+												   0.0);
 	else
 		osastate->sortstate = tuplesort_begin_datum(qstate->sortColType,
 													qstate->sortOperator,
@@ -307,7 +307,7 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 													NULL,
 													qstate->rescan_needed,
 													0,
-													0);
+													0.0);
 
 	osastate->number_of_rows = 0;
 	osastate->sort_done = false;
