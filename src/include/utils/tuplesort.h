@@ -202,7 +202,7 @@ extern Tuplesortstate *tuplesort_begin_heap(TupleDesc tupDesc,
 											bool *nullsFirstFlags,
 											int workMem, SortCoordinate coordinate,
 											bool randomAccess, int32 est_tupwidth,
-											int64 est_tuples);
+											double est_tuples);
 extern Tuplesortstate *tuplesort_begin_cluster(TupleDesc tupDesc,
 											   Relation indexRel, int workMem,
 											   SortCoordinate coordinate, bool randomAccess);

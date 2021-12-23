@@ -105,7 +105,7 @@ ExecSort(PlanState *pstate)
 												   NULL,
 												   node->randomAccess,
 												   plannode->plan.plan_width,
-												   (int64) plannode->plan.plan_rows);
+												   plannode->plan.plan_rows);
 		else
 			tuplesortstate = tuplesort_begin_heap(tupDesc,
 												  plannode->numCols,
@@ -117,7 +117,7 @@ ExecSort(PlanState *pstate)
 												  NULL,
 												  node->randomAccess,
 												  plannode->plan.plan_width,
-												  (int64) plannode->plan.plan_rows);
+												  plannode->plan.plan_rows);
 		if (node->bounded)
 			tuplesort_set_bound(tuplesortstate, node->bound);
 		node->tuplesortstate = (void *) tuplesortstate;
