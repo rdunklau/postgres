@@ -5,6 +5,13 @@
 
 
 /*
+ * Implementation speficic GUCs. Those are defined even if we use another implementation, but will have
+ * no effect in that case.
+ */
+
+int glibc_malloc_max_trim_threshold;
+
+/*
  * Depending on the malloc implementation used, we may want to
  * tune it.
  * In this first version, the only tunable library is glibc's malloc
@@ -54,17 +61,21 @@ MallocAdjustSettings()
 	int uncapped_mmap_threshold,
 		mmap_threshold,
 		trim_threshold;
+	/* If static malloc tuning is disabled, bail out. */
+	if (glibc_malloc_max_trim_threshold == -1)
+		return;
 	/* We don't want to adjust anything in the postmaster process, as that would
 	 * disable dynamic adjustment for any child process*/
 	if ((MyProcPid == PostmasterPid) ||
 		((MyBackendType != B_BACKEND) &&
 		 (MyBackendType != B_BG_WORKER)))
 		return;
-	uncapped_mmap_threshold = Min(INT_MAX, (long) work_mem * 1024);
+	uncapped_mmap_threshold = Min(INT_MAX, (long) work_mem / 2 * 1024);
 	/* Cap mmap_threshold to MMAP_THRESHOLD_MAX */
 	mmap_threshold = Min(MMAP_THRESHOLD_MAX, uncapped_mmap_threshold);
-	/* Cap mmap_threhsold to 2 times MMAP_THRESHOLD_MAX */
-	trim_threshold =  Min(2 * MMAP_THRESHOLD_MAX,  uncapped_mmap_threshold);
+	/* Trim threshold to two times that, with a max of
+	 * glibc_malloc_max_trim_threshold */
+	trim_threshold = Min(2 * uncapped_mmap_threshold, (long) glibc_malloc_max_trim_threshold * 1024);
 	if (mmap_threshold != previous_mmap_threshold)
 	{
 		mallopt(M_MMAP_THRESHOLD, mmap_threshold);

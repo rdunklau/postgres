@@ -96,6 +96,9 @@ extern void MemoryContextAllowInCriticalSection(MemoryContext context,
  */
 extern void MallocAdjustSettings(void);
 
+/* Malloc-implementation specific GUCs */
+extern PGDLLIMPORT int glibc_malloc_max_trim_threshold;
+
 #ifdef MEMORY_CONTEXT_CHECKING
 extern void MemoryContextCheck(MemoryContext context);
 #endif
