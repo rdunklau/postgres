@@ -916,7 +916,7 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 */
 	state->tuplecontext = GenerationContextCreate(state->sortcontext,
 												  "Caller tuples",
-												  (Size) blockSize);
+												  ALLOCSET_DEFAULT_SIZES);
 
 	state->status = TSS_INITIAL;
 	state->bounded = false;
