@@ -880,6 +880,7 @@ tuplesort_begin_batch(Tuplesortstate *state)
 {
 	MemoryContext oldcontext;
 	int64		blockSize;
+	int64		initBlockSize;
 	int64		tuparraymem = sizeof(SortTuple) * state->initial_memtupsize;
 
 	oldcontext = MemoryContextSwitchTo(state->maincontext);
@@ -896,9 +897,13 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	{
 		blockSize = pg_nextpower2_64((int64) Min(state->est_tuple_memory, MaxAllocSize));
 		blockSize = Max(blockSize, ALLOCSET_DEFAULT_INITSIZE);
+		initBlockSize = Max(blockSize / 4, ALLOCSET_DEFAULT_INITSIZE);
 	}
 	else
-		blockSize = ALLOCSET_DEFAULT_INITSIZE;
+	{
+		blockSize = ALLOCSET_DEFAULT_MAXSIZE;
+		initBlockSize = ALLOCSET_DEFAULT_MAXSIZE;
+	}
 
 	/* don't exceed allowedMem */
 	blockSize = Min(blockSize, pg_prevpower2_64(state->allowedMem - tuparraymem));
@@ -916,7 +921,9 @@ tuplesort_begin_batch(Tuplesortstate *state)
 	 */
 	state->tuplecontext = GenerationContextCreate(state->sortcontext,
 												  "Caller tuples",
-												  ALLOCSET_DEFAULT_SIZES);
+												  0,
+												  initBlockSize,
+												  blockSize);
 
 	state->status = TSS_INITIAL;
 	state->bounded = false;
