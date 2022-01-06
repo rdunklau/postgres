@@ -71,14 +71,13 @@ MallocAdjustSettings()
 		((MyBackendType != B_BACKEND) &&
 		 (MyBackendType != B_BG_WORKER)))
 		return;
-	base_target = Min((long) work_mem / 2 * 1024, (long) glibc_malloc_max_trim_threshold / 2 * 1024);
+	base_target = Min((long) work_mem * 1024, (long) glibc_malloc_max_trim_threshold / 2 * 1024);
 	uncapped_mmap_threshold = Min(INT_MAX, base_target);
 	/* Cap mmap_threshold to MMAP_THRESHOLD_MAX */
 	mmap_threshold = Min(MMAP_THRESHOLD_MAX, uncapped_mmap_threshold);
 	/* Trim threshold to two times that, with a max of
 	 * glibc_malloc_max_trim_threshold */
-	trim_threshold = Min((long) 2 * uncapped_mmap_threshold, (long) 2 * base_target);
-	trim_threshold = Min(INT_MAX, trim_threshold);
+	trim_threshold = Min(INT_MAX, (long) trim_threshold * 2);
 	if (mmap_threshold != previous_mmap_threshold)
 	{
 		mallopt(M_MMAP_THRESHOLD, mmap_threshold);
