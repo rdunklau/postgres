@@ -77,7 +77,7 @@ MallocAdjustSettings()
 	mmap_threshold = Min(MMAP_THRESHOLD_MAX, uncapped_mmap_threshold);
 	/* Trim threshold to two times that, with a max of
 	 * glibc_malloc_max_trim_threshold */
-	trim_threshold = Min(INT_MAX, (long) trim_threshold * 2);
+	trim_threshold = Min(INT_MAX, (long) uncapped_mmap_threshold * 2);
 	if (mmap_threshold != previous_mmap_threshold)
 	{
 		mallopt(M_MMAP_THRESHOLD, mmap_threshold);
