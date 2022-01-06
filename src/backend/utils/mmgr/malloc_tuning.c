@@ -72,6 +72,9 @@ MallocAdjustSettings()
 		 (MyBackendType != B_BG_WORKER)))
 		return;
 	base_target = Min((long) work_mem * 1024, (long) glibc_malloc_max_trim_threshold / 2 * 1024);
+	/* To account for various overhead thresholds, add one more memory page to that.
+	 */
+	base_target += 4096;
 	uncapped_mmap_threshold = Min(INT_MAX, base_target);
 	/* Cap mmap_threshold to MMAP_THRESHOLD_MAX */
 	mmap_threshold = Min(MMAP_THRESHOLD_MAX, uncapped_mmap_threshold);
