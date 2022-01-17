@@ -7664,6 +7664,11 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
          <entry>number</entry>
          <entry>Query ID</entry>
         </row>
+        <row>
+         <entry><literal>tags</literal></entry>
+         <entry>object</entry>
+         <entry>Additional error tags</entry>
+        </row>
        </tbody>
       </tgroup>
      </table>
