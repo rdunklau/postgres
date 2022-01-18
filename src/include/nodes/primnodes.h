@@ -1633,4 +1633,38 @@ typedef enum RowPatternAnchorKind
 	ROWPATTERNANCHOR_END
 } RowPatternAnchorKind;
 
+typedef struct RowPatternQuantifier
+{
+	Node	*lb;
+	Node	*ub;
+} RowPatternQuantifier;
+
+typedef struct RowPattern
+{
+	NodeTag type;
+	RowPatternKind kind;
+
+	/* Args used for most types */
+	List	*args;
+
+	/* For anchor */
+	RowPatternAnchorKind anchor_kind;
+
+	/* For quantifier */
+	RowPatternQuantifier *quantifier;
+	bool		reluctant;
+} RowPattern;
+
+typedef struct MatchRecognize
+{
+	NodeTag type;
+
+	List *orderClause;
+	List *partitionClause;
+	List *measures;
+	RowPattern *pattern;
+
+	int location;
+} MatchRecognize;
+
 #endif							/* PRIMNODES_H */

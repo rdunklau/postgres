@@ -657,21 +657,7 @@ typedef struct RowPatternVar
 	Node* expr;
 } RowPatternVar;
 
-typedef struct RowPattern
-{
-	NodeTag type;
-	RowPatternKind kind;
 
-	/* Args used for most types */
-	List	*args;
-
-	/* For anchor */
-	RowPatternAnchorKind anchor_kind;
-
-	/* For quantifier */
-	A_Indices	*indices;
-	bool		reluctant;
-} RowPattern;
 
 /*
  * RangeMatchRecognize - represents a MATCH_RECOGNIZE ... clause

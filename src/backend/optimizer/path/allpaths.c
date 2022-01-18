@@ -451,6 +451,9 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 				/* Might as well just build the path immediately */
 				set_result_pathlist(root, rel, rte);
 				break;
+			case RTE_MATCH_RECOGNIZE:
+				/* TODO: actually set sizes */
+				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
 				break;
@@ -524,6 +527,9 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				break;
 			case RTE_RESULT:
 				/* simple Result --- fully handled during set_rel_size */
+				break;
+			case RTE_MATCH_RECOGNIZE:
+				/* match_recognize --- TODO: actually implement */
 				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);

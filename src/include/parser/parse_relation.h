@@ -80,6 +80,10 @@ extern ParseNamespaceItem *addRangeTableEntryForTableFunc(ParseState *pstate,
 														  Alias *alias,
 														  bool lateral,
 														  bool inFromCl);
+extern ParseNamespaceItem *addRangeTableEntryForMatchRecognize(ParseState *pstate,
+															   MatchRecognize *mr,
+														  	   List* targetlist,
+															   Alias *alias);
 extern ParseNamespaceItem *addRangeTableEntryForJoin(ParseState *pstate,
 													 List *colnames,
 													 ParseNamespaceColumn *nscolumns,

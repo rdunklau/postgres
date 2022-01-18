@@ -1608,7 +1608,6 @@ addRangeTableEntryForSubquery(ParseState *pstate,
 		if (varattno > numaliases)
 		{
 			char	   *attrname;
-
 			attrname = pstrdup(te->resname);
 			eref->colnames = lappend(eref->colnames, makeString(attrname));
 		}
@@ -2035,6 +2034,72 @@ addRangeTableEntryForTableFunc(ParseState *pstate,
 								rte->coltypes, rte->coltypmods,
 								rte->colcollations);
 }
+
+ParseNamespaceItem *
+addRangeTableEntryForMatchRecognize(ParseState *pstate,
+									MatchRecognize *mr,
+									List *targetlist,
+									Alias *alias)
+{
+	RangeTblEntry *rte = makeNode(RangeTblEntry);
+	char	   *refname = alias->aliasname;
+	int	varattno;
+	int	numaliases;
+
+	ListCell *lc;
+	rte->rtekind = RTE_MATCH_RECOGNIZE;
+	rte->relid = InvalidOid;
+	rte->subquery = NULL;
+	rte->tablefunc = NULL;
+	rte->alias = alias;
+	/* Fill in eref correctly */
+	rte->eref = copyObject(alias);
+	rte->inh = false;
+	rte->inFromCl = true;
+	rte->requiredPerms = ACL_SELECT;
+	rte->checkAsUser = InvalidOid;
+	rte->selectedCols = NULL;
+	rte->insertedCols = NULL;
+	rte->updatedCols = NULL;
+	rte->extraUpdatedCols = NULL;
+
+	varattno = 0;
+
+	numaliases = list_length(rte->eref->colnames);
+
+	foreach(lc, targetlist)
+	{
+		TargetEntry *tle = lfirst(lc);
+		if (tle->resjunk)
+			continue;
+		varattno++;
+		Assert(varattno == tle->resno);
+		if (varattno > numaliases)
+		{
+			char *attrname;
+			attrname = pstrdup(tle->resname);
+			rte->eref->colnames = lappend(rte->eref->colnames, makeString(attrname));
+		}
+		rte->coltypes = lappend_oid(rte->coltypes, exprType((Node *) tle->expr));
+		rte->coltypmods = lappend_int(rte->coltypmods, exprTypmod((Node *) tle->expr));
+		rte->colcollations = lappend_oid(rte->colcollations, exprCollation((Node *) tle->expr));
+	}
+
+	if (varattno < numaliases)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+				 errmsg("Match recognize \"%s\" has %d columns available but %d columns specified",
+						refname, varattno, numaliases)));
+
+	pstate->p_rtable = lappend(pstate->p_rtable, rte);
+
+	/* Build a ParseNamespaceItem */
+	return buildNSItemFromLists(rte,
+								list_length(pstate->p_rtable),
+								rte->coltypes, rte->coltypmods,
+								rte->colcollations);
+}
+
 
 /*
  * Add an entry for a VALUES list to the pstate's range table (p_rtable).
@@ -3665,3 +3730,4 @@ isQueryUsingTempRelation_walker(Node *node, void *context)
 								  isQueryUsingTempRelation_walker,
 								  context);
 }
+

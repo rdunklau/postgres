@@ -313,6 +313,7 @@ build_simple_rel(PlannerInfo *root, int relid, RelOptInfo *parent)
 		case RTE_VALUES:
 		case RTE_CTE:
 		case RTE_NAMEDTUPLESTORE:
+		case RTE_MATCH_RECOGNIZE:
 
 			/*
 			 * Subquery, function, tablefunc, values list, CTE, or ENR --- set

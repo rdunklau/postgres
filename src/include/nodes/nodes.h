@@ -201,6 +201,7 @@ typedef enum NodeTag
 	T_FromExpr,
 	T_OnConflictExpr,
 	T_IntoClause,
+	T_MatchRecognize,
 	T_MatchSkipClause,
 
 	/*
@@ -494,6 +495,7 @@ typedef enum NodeTag
 	T_RangeMatchRecognize,
 	T_RowPatternVar,
 	T_RowPattern,
+	T_RowPatternQuantifier,
 
 	/*
 	 * TAGS FOR REPLICATION GRAMMAR PARSE NODES (replnodes.h)

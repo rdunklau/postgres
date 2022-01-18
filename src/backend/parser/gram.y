@@ -13139,63 +13139,64 @@ match_pattern_elem:
 match_pattern_elem_quantifier:
 			'*' {
 				RowPattern*n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = (Node*) makeInteger(0);
-				n->indices->uidx = NULL;
+				n->quantifier->lb = (Node*) makeInteger(0);
+				n->quantifier->ub = NULL;
 				n->reluctant = false;
-				$$ = (Node *) n;			}
+				$$ = (Node *) n;
+			}
 			| '+' {
 				RowPattern *n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = (Node*) makeInteger(1);
-				n->indices->uidx = NULL;
+				n->quantifier->lb = (Node*) makeInteger(1);
+				n->quantifier->ub = NULL;
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| '?' {
 				RowPattern *n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = (Node*) makeInteger(0);
-				n->indices->uidx = (Node*) makeInteger(1);
+				n->quantifier->lb = (Node*) makeInteger(0);
+				n->quantifier->ub = (Node*) makeInteger(1);
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| lbrace Iconst rbrace {
 				RowPattern *n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = (Node*) makeInteger($2);
-				n->indices->uidx = (Node*) makeInteger($2);
+				n->quantifier->lb = (Node*) makeInteger($2);
+				n->quantifier->ub = (Node*) makeInteger($2);
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| lbrace Iconst ',' rbrace {
 				RowPattern *n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = (Node*) makeInteger($2);
-				n->indices->uidx = NULL;
+				n->quantifier->lb = (Node*) makeInteger($2);
+				n->quantifier->ub = NULL;
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| lbrace Iconst ',' Iconst rbrace {
 				RowPattern *n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = (Node*) makeInteger($2);
-				n->indices->uidx = (Node*) makeInteger($4);
+				n->quantifier->lb = (Node*) makeInteger($2);
+				n->quantifier->ub = (Node*) makeInteger($4);
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| lbrace ',' Iconst rbrace {
 				RowPattern *n = makeNode(RowPattern);
-				n->indices = makeNode(A_Indices);
+				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->indices->lidx = NULL;
-				n->indices->uidx = (Node*) makeInteger($3);
+				n->quantifier->lb = NULL;
+				n->quantifier->ub = (Node*) makeInteger($3);
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
