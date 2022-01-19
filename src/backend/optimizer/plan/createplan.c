@@ -220,6 +220,9 @@ static NamedTuplestoreScan *make_namedtuplestorescan(List *qptlist, List *qpqual
 													 Index scanrelid, char *enrname);
 static WorkTableScan *make_worktablescan(List *qptlist, List *qpqual,
 										 Index scanrelid, int wtParam);
+static MatchRecognizeScan * create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
+							   List* tlist, List* scan_clauses);
+
 static RecursiveUnion *make_recursive_union(List *tlist,
 											Plan *lefttree,
 											Plan *righttree,
@@ -315,6 +318,7 @@ static GatherMerge *create_gather_merge_plan(PlannerInfo *root,
 											 GatherMergePath *best_path);
 
 
+
 /*
  * create_plan
  *	  Creates the access plan for a query by recursively processing the
@@ -407,6 +411,7 @@ create_plan_recurse(PlannerInfo *root, Path *best_path, int flags)
 		case T_NamedTuplestoreScan:
 		case T_ForeignScan:
 		case T_CustomScan:
+		case T_MatchRecognizeScan:
 			plan = create_scan_plan(root, best_path, flags);
 			break;
 		case T_HashJoin:
@@ -773,6 +778,11 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 												   (CustomPath *) best_path,
 												   tlist,
 												   scan_clauses);
+			break;
+		case T_MatchRecognizeScan:
+			plan = (Plan *) create_matchrecognizescan_plan(root , (MatchRecognizePath *) best_path,
+				 										   tlist,
+														   scan_clauses);
 			break;
 
 		default:
@@ -1927,6 +1937,7 @@ create_gather_merge_plan(PlannerInfo *root, GatherMergePath *best_path)
 
 	return gm_plan;
 }
+
 
 /*
  * create_projection_plan
@@ -4232,6 +4243,24 @@ create_customscan_plan(PlannerInfo *root, CustomPath *best_path,
 
 	return cplan;
 }
+
+
+
+static MatchRecognizeScan *
+create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
+							   List* tlist, List* scan_clauses)
+{
+	MatchRecognizeScan * scan_plan = makeNode(MatchRecognizeScan);
+	RelOptInfo *rel = best_path->path.parent;
+	Plan *subplan;
+	subplan = create_plan(rel->subroot, best_path->subpath);
+	scan_plan->scan.plan.targetlist = tlist;
+	scan_plan->scan.scanrelid = rel->relid;
+	scan_plan->subplan = subplan;
+	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
+	return scan_plan;
+}
+
 
 
 /*****************************************************************************

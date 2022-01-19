@@ -2113,6 +2113,18 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 	return pathnode;
 }
 
+MatchRecognizePath *
+create_matchrecognize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath)
+{
+	MatchRecognizePath *pathnode = makeNode(MatchRecognizePath);
+	pathnode->path.pathtype = T_MatchRecognizeScan;
+	pathnode->path.parent = rel;
+	pathnode->subpath = subpath;
+	pathnode->path.pathtarget = rel->reltarget;
+	pathnode->path.rows = subpath->rows;
+	return pathnode;
+}
+
 /*
  * create_namedtuplestorescan_path
  *	  Creates a path corresponding to a scan of a named tuplestore, returning

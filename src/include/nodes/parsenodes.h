@@ -40,7 +40,7 @@ typedef enum OverridingKind
 typedef enum QuerySource
 {
 	QSRC_ORIGINAL,				/* original parsetree (explicit query) */
-	QSRC_PARSER,				/* added by parse analysis (now unused) */
+	QSRC_PARSER,				/* added by parse analysis */
 	QSRC_INSTEAD_RULE,			/* added by unconditional INSTEAD rule */
 	QSRC_QUAL_INSTEAD_RULE,		/* added by conditional INSTEAD rule */
 	QSRC_NON_INSTEAD_RULE		/* added by non-INSTEAD rule */
@@ -1181,6 +1181,8 @@ typedef struct RangeTblEntry
 	/*
 	 * Fields valid for MATCH_RECOGNIZE RTEs
 	 */
+	MatchRecognize *matchrecognize;
+
 
 	/*
 	 * Fields valid in all RTEs:

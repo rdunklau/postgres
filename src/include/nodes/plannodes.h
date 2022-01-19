@@ -973,6 +973,12 @@ typedef struct GatherMerge
 								 * at gather merge or one of it's child node */
 } GatherMerge;
 
+typedef struct MatchRecognizeScan
+{
+	Scan	scan;
+	Plan	*subplan;
+} MatchRecognizeScan;
+
 /* ----------------
  *		hash build node
  *

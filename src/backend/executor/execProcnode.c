@@ -97,6 +97,7 @@
 #include "executor/nodeMemoize.h"
 #include "executor/nodeMergeAppend.h"
 #include "executor/nodeMergejoin.h"
+#include "executor/nodeMatchrecognizescan.h"
 #include "executor/nodeModifyTable.h"
 #include "executor/nodeNamedtuplestorescan.h"
 #include "executor/nodeNestloop.h"
@@ -290,6 +291,11 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 													  estate, eflags);
 			break;
 
+		case T_MatchRecognizeScan:
+			result = (PlanState *) ExecInitMatchRecognizeScan((MatchRecognizeScan *) node,
+															   estate, eflags);
+			break;
+
 			/*
 			 * join nodes
 			 */
@@ -380,7 +386,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 			result = (PlanState *) ExecInitLimit((Limit *) node,
 												 estate, eflags);
 			break;
-
+		
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(node));
 			result = NULL;		/* keep compiler quiet */
@@ -688,6 +694,10 @@ ExecEndNode(PlanState *node)
 
 		case T_CustomScanState:
 			ExecEndCustomScan((CustomScanState *) node);
+			break;
+
+		case T_MatchRecognizeScanState:
+			ExecEndMatchRecognizeScan((MatchRecognizeScanState *) node);
 			break;
 
 			/*

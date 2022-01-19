@@ -3842,7 +3842,7 @@ _outRowPattern(StringInfo str, const RowPattern *node)
 	switch (node->kind)
 	{
 		case ROWPATTERN_QUANTIFIER:
-			WRITE_NODE_FIELD(indices);
+			WRITE_NODE_FIELD(quantifier);
 			WRITE_BOOL_FIELD(reluctant);
 			break;
 		case ROWPATTERN_ANCHOR:

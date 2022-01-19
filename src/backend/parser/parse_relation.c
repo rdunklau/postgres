@@ -2038,8 +2038,10 @@ addRangeTableEntryForTableFunc(ParseState *pstate,
 ParseNamespaceItem *
 addRangeTableEntryForMatchRecognize(ParseState *pstate,
 									MatchRecognize *mr,
+									Query *subquery,
 									List *targetlist,
-									Alias *alias)
+									Alias *alias,
+									Index input_rteidx)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
 	char	   *refname = alias->aliasname;
@@ -2049,7 +2051,7 @@ addRangeTableEntryForMatchRecognize(ParseState *pstate,
 	ListCell *lc;
 	rte->rtekind = RTE_MATCH_RECOGNIZE;
 	rte->relid = InvalidOid;
-	rte->subquery = NULL;
+	rte->subquery = subquery;
 	rte->tablefunc = NULL;
 	rte->alias = alias;
 	/* Fill in eref correctly */
@@ -2070,14 +2072,14 @@ addRangeTableEntryForMatchRecognize(ParseState *pstate,
 	foreach(lc, targetlist)
 	{
 		TargetEntry *tle = lfirst(lc);
-		if (tle->resjunk)
-			continue;
 		varattno++;
-		Assert(varattno == tle->resno);
 		if (varattno > numaliases)
 		{
 			char *attrname;
-			attrname = pstrdup(tle->resname);
+			if (tle->resjunk)
+				attrname = "?";
+			else
+				attrname = pstrdup(tle->resname);
 			rte->eref->colnames = lappend(rte->eref->colnames, makeString(attrname));
 		}
 		rte->coltypes = lappend_oid(rte->coltypes, exprType((Node *) tle->expr));
@@ -2091,6 +2093,7 @@ addRangeTableEntryForMatchRecognize(ParseState *pstate,
 				 errmsg("Match recognize \"%s\" has %d columns available but %d columns specified",
 						refname, varattno, numaliases)));
 
+	rte->matchrecognize = mr;
 	pstate->p_rtable = lappend(pstate->p_rtable, rte);
 
 	/* Build a ParseNamespaceItem */

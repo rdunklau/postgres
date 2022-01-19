@@ -58,6 +58,7 @@ OBJS = \
 	nodeMergejoin.o \
 	nodeModifyTable.o \
 	nodeNamedtuplestorescan.o \
+	nodeMatchrecognizescan.o \
 	nodeNestloop.o \
 	nodeProjectSet.o \
 	nodeRecursiveunion.o \

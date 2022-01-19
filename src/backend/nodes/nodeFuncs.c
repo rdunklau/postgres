@@ -2539,6 +2539,10 @@ range_table_entry_walker(RangeTblEntry *rte,
 		case RTE_RESULT:
 			/* nothing to do */
 			break;
+		case RTE_MATCH_RECOGNIZE:
+			/* TODO: actually recurse */
+			break;
+
 	}
 
 	if (walker(rte->securityQuals, context))

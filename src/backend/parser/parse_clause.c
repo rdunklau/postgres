@@ -72,6 +72,8 @@ static TableSampleClause *transformRangeTableSample(ParseState *pstate,
 													RangeTableSample *rts);
 static ParseNamespaceItem *transformRangeMatchRecognize(ParseState *pstate,
 													 RangeMatchRecognize *mr);
+static ParseNamespaceItem *transformRangeMatchRecognizeInputRel(ParseState *pstate, RangeMatchRecognize *mr);
+
 static RowPattern *transformPatternRecurse(ParseState *pstate, RowPattern * pattern, ParseNamespaceItem *input_nsitem);
 
 static ParseNamespaceItem *getNSItemForSpecialRelationTypes(ParseState *pstate,
@@ -1006,10 +1008,9 @@ transformRangeTableSample(ParseState *pstate, RangeTableSample *rts)
 
 /*
  * transformRangeMatchRecognize -
- *			Transform a raw RangeMatchRecognize into a MatchRecognize
- *
- *	Transforms the inner relation and the measures.
- *
+ *	Transform a raw RangeMatchRecognize into a MatchRecognize.
+ *	The input relation is transformed into a subquery SELECT ... GROUP BY ..
+ *	ORDER BY.
  * */
 static ParseNamespaceItem *
 transformRangeMatchRecognize(ParseState *pstate, RangeMatchRecognize *mr)
@@ -1018,19 +1019,21 @@ transformRangeMatchRecognize(ParseState *pstate, RangeMatchRecognize *mr)
 	List *target_list = NIL;
 	MatchRecognize *m = makeNode(MatchRecognize);
 	ParseNamespaceItem *input_nsitem;
+	ParseState *inner_pstate = make_parsestate(pstate);
 
-	/* MatchRecognize takes only one rel as input. The namespace should reflect
-	 * that. */
-	Assert(list_length(pstate->p_namespace) == 1);
-	input_nsitem = linitial(pstate->p_namespace);
 
+	/* Recursively transform the input relation. It should not be added to
+	 * the global namespace, as the input rel is only visible from the
+	 * match_recognize clause */
+	input_nsitem = transformRangeMatchRecognizeInputRel(inner_pstate, mr);
+	inner_pstate->p_expr_kind = EXPR_KIND_MATCH_RECOGNIZE;
 	/* The output columns consists of the columns used in the row pattern
 	 * partition clause, followed by the columns in the measures clause.
 	 */
 	foreach(lc, mr->partitionClause)
 	{
 		Node *gexpr = (Node *) lfirst(lc);
-		TargetEntry *tle = transformTargetEntry(pstate, gexpr,
+		TargetEntry *tle = transformTargetEntry(inner_pstate, gexpr,
 												NULL,
 												EXPR_KIND_MATCH_RECOGNIZE,
 												NULL,
@@ -1038,17 +1041,22 @@ transformRangeMatchRecognize(ParseState *pstate, RangeMatchRecognize *mr)
 		target_list = lappend(target_list, tle);
 	}
 
+	/* MatchRecognize takes only one rel as input. The namespace should reflect
+	 * that. */
+
+
+
 
 	/*
 	 * Transform order and partition clauses
 	 */
-	m->orderClause = transformSortClause(pstate,
+	m->orderClause = transformSortClause(inner_pstate,
 									  mr->sortClause,
 									  &target_list,
 									  EXPR_KIND_MATCH_RECOGNIZE,
 									  true /* force SQL99 rules */ );
 
-	m->partitionClause = transformGroupClause(pstate,
+	m->partitionClause = transformGroupClause(inner_pstate,
 										   mr->partitionClause,
 										   NULL,
 										   &target_list,
@@ -1056,25 +1064,58 @@ transformRangeMatchRecognize(ParseState *pstate, RangeMatchRecognize *mr)
 										   EXPR_KIND_MATCH_RECOGNIZE,
 										   true);
 
-	/* 
+	/*
 	 * Transform the pattern, and add a namespace for each different symbol.
 	 */
-	m->pattern = transformPatternRecurse(pstate, mr->pattern, input_nsitem);
+	m->pattern = transformPatternRecurse(inner_pstate, mr->pattern, input_nsitem);
 
-	m->measures = transformTargetList(pstate, mr->measureClause, EXPR_KIND_MATCH_RECOGNIZE);
+	m->measures = transformTargetList(inner_pstate, mr->measureClause, EXPR_KIND_MATCH_RECOGNIZE);
 	foreach(lc, m->measures)
 	{
 		target_list = lappend(target_list, lfirst(lc));
 	}
-
-	/*
-	 * Transform measures clauses
-	 */
-	return addRangeTableEntryForMatchRecognize(pstate->parentParseState,
+	m->targetlist = target_list;
+	pfree(inner_pstate);
+	return addRangeTableEntryForMatchRecognize(pstate,
 											   m,
+											   input_nsitem->p_rte->subquery,
 											   target_list,
-											   mr->alias);
+											   mr->alias,
+											   input_nsitem->p_rtindex);
 
+}
+
+static ParseNamespaceItem*
+transformRangeMatchRecognizeInputRel(ParseState *pstate, RangeMatchRecognize *mr)
+{
+	Query	*qry = makeNode(Query);
+	ResTarget *target;
+	ColumnRef *cref;
+	List *partitionClause;
+	List *sortClause;
+	List *top_nsitem;
+	qry->commandType = CMD_SELECT;
+	qry->querySource = QSRC_PARSER;
+
+	/* Make it a SELECT *, and let regular parse analysis do the job of
+	 * expanding it, and the planner to trim it down later on.
+	 */
+	cref = makeNode(ColumnRef);
+	cref->fields = list_make1(makeNode(A_Star));
+	target = makeNode(ResTarget);
+	target->val = (Node *) cref;
+	transformFromClause(pstate, list_make1(mr->relation));
+	qry->targetList = transformTargetList(pstate, lappend(NIL, target), EXPR_KIND_SELECT_TARGET);
+	qry->jointree = makeFromExpr(pstate->p_joinlist, NULL);
+	sortClause = transformSortClause(pstate, mr->sortClause, &qry->targetList, EXPR_KIND_ORDER_BY, true);
+	partitionClause = transformGroupClause(pstate, mr->partitionClause, NULL, &qry->targetList, sortClause, EXPR_KIND_GROUP_BY, true);
+	qry->sortClause = list_concat(partitionClause, sortClause);
+	qry->rtable = pstate->p_rtable;
+	pstate->p_expr_kind = EXPR_KIND_FROM_SUBSELECT;
+	pstate->p_lateral_active = false;
+	pstate->p_expr_kind = EXPR_KIND_MATCH_RECOGNIZE;
+	return addRangeTableEntryForSubquery(pstate, qry, makeAlias("*MATCH_RECOGNIZE_INPUT*", NIL),
+										 false, true);
 }
 
 
@@ -1097,6 +1138,7 @@ transformPatternRecurse(ParseState *pstate, RowPattern * pattern, ParseNamespace
 			item = (ParseNamespaceItem *) palloc(sizeof(ParseNamespaceItem));
 			item->p_names = copyObject(input_nsitem->p_names);
 			item->p_names->aliasname = pstrdup(symbolname);
+			item->p_rte = input_nsitem->p_rte;
 			item->p_rtindex = input_nsitem->p_rtindex;
 			item->p_nscolumns = input_nsitem->p_nscolumns;
 			item->p_rel_visible = true;
@@ -1269,19 +1311,7 @@ transformFromClauseItem(ParseState *pstate, Node *n,
 		/* MATCH_RECOGNIZE clause */
 		RangeMatchRecognize *m = (RangeMatchRecognize *) n;
 		RangeTblRef *rtr;
-		ParseNamespaceItem *nsitem;
-		List *save_namespace = NIL;
-		List *inner_namespace = NIL;
-		ParseState *inner_pstate = make_parsestate(pstate);
-
-		/* Recursively transform the input relation. It should not be added to
-		 * the global namespace, as the input rel is only visible from the
-		 * match_recognize clause */
-		transformFromClauseItem(pstate, m->relation, top_nsitem, &inner_namespace);
-		inner_pstate->p_expr_kind = EXPR_KIND_MATCH_RECOGNIZE;
-		inner_pstate->p_rtable = list_copy(pstate->p_rtable);
-		inner_pstate->p_namespace = inner_namespace;
-		nsitem = transformRangeMatchRecognize(inner_pstate, m);
+		ParseNamespaceItem *nsitem = transformRangeMatchRecognize(pstate, m);
 		*namespace = list_make1(nsitem);
 		*top_nsitem = nsitem;
 		rtr = makeNode(RangeTblRef);

@@ -1835,6 +1835,13 @@ typedef struct WindowAggPath
 	WindowClause *winclause;	/* WindowClause we'll be using */
 } WindowAggPath;
 
+typedef struct MatchRecognizePath
+{
+	Path		path;
+	Path		*subpath;
+	/* TODO: add match recognize useful info */
+} MatchRecognizePath;
+
 /*
  * SetOpPath represents a set-operation, that is INTERSECT or EXCEPT
  */

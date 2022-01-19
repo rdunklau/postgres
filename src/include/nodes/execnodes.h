@@ -2441,6 +2441,12 @@ typedef struct WindowAggState
 	TupleTableSlot *temp_slot_2;
 } WindowAggState;
 
+typedef struct MatchRecognizeScanState
+{
+	ScanState ss;
+	PlanState *subplan;
+} MatchRecognizeScanState;
+
 /* ----------------
  *	 UniqueState information
  *

@@ -1297,6 +1297,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			else
 				pname = sname;
 			break;
+		case T_MatchRecognizeScan:
+			pname = sname = "MatchRecognize Scan";
+			break;
 		case T_Material:
 			pname = sname = "Materialize";
 			break;
@@ -2109,6 +2112,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		IsA(plan, BitmapAnd) ||
 		IsA(plan, BitmapOr) ||
 		IsA(plan, SubqueryScan) ||
+		IsA(plan, MatchRecognizeScan) ||
 		(IsA(planstate, CustomScanState) &&
 		 ((CustomScanState *) planstate)->custom_ps != NIL) ||
 		planstate->subPlan;
@@ -2159,6 +2163,10 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_SubqueryScan:
 			ExplainNode(((SubqueryScanState *) planstate)->subplan, ancestors,
 						"Subquery", NULL, es);
+			break;
+		case T_MatchRecognizeScan:
+			ExplainNode(((MatchRecognizeScanState *) planstate)->subplan, ancestors,
+						"Input relation", NULL, es);
 			break;
 		case T_CustomScan:
 			ExplainCustomChildren((CustomScanState *) planstate,

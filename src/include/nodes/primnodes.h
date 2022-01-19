@@ -1662,6 +1662,7 @@ typedef struct MatchRecognize
 	List *orderClause;
 	List *partitionClause;
 	List *measures;
+	List *targetlist;
 	RowPattern *pattern;
 
 	int location;

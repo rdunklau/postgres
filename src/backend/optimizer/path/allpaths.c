@@ -118,6 +118,9 @@ static void set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								   RangeTblEntry *rte);
 static void set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel,
 							 RangeTblEntry *rte);
+static void set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel,
+										 RangeTblEntry *rte);
+
 static void set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
 										 RangeTblEntry *rte);
 static void set_result_pathlist(PlannerInfo *root, RelOptInfo *rel,
@@ -452,7 +455,7 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 				set_result_pathlist(root, rel, rte);
 				break;
 			case RTE_MATCH_RECOGNIZE:
-				/* TODO: actually set sizes */
+				set_matchrecognize_pathlist(root, rel, rte);
 				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
@@ -529,7 +532,7 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				/* simple Result --- fully handled during set_rel_size */
 				break;
 			case RTE_MATCH_RECOGNIZE:
-				/* match_recognize --- TODO: actually implement */
+				/* match_recognize --- fully handled during set_rel_size */
 				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
@@ -740,6 +743,9 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 		case RTE_RESULT:
 			/* RESULT RTEs, in themselves, are no problem. */
 			break;
+		case RTE_MATCH_RECOGNIZE:
+			/* TODO: see if we can actually parallelize */
+			return;
 	}
 
 	/*
@@ -2550,6 +2556,24 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	/* Generate appropriate path */
 	add_path(rel, create_ctescan_path(root, rel, required_outer));
 }
+
+static void
+set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
+{
+	Query * query = rte->subquery;
+	RelOptInfo *sub_final_rel;
+	remove_unused_subquery_outputs(query, rel);
+	rel->subroot = subquery_planner(root->glob, query, root, false, 1);
+	sub_final_rel = fetch_upper_rel(rel->subroot, UPPERREL_FINAL, NULL);
+
+	/* Just copy it for now */
+	rel->rows = sub_final_rel->cheapest_total_path->rows;
+	rel->reltarget->width = sub_final_rel->reltarget->width;
+
+	add_path(rel, (Path *) create_matchrecognize_path(root, rel, sub_final_rel->cheapest_total_path));
+	add_path(rel, (Path *) create_matchrecognize_path(root, rel, sub_final_rel->cheapest_startup_path));
+}
+
 
 /*
  * set_namedtuplestore_pathlist

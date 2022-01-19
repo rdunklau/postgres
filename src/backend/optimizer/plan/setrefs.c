@@ -1107,6 +1107,27 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 				}
 			}
 			break;
+		case T_MatchRecognizeScan:
+			{
+				MatchRecognizeScan *splan = (MatchRecognizeScan *) plan;
+				RelOptInfo *rel;
+				Plan	   *result;
+
+				/* Need to look up the subquery's RelOptInfo, since we need its subroot */
+				rel = find_base_rel(root, splan->scan.scanrelid);
+
+				/* Recursively process the subplan */
+				splan->subplan = set_plan_references(rel->subroot, splan->subplan);
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist,
+								  rtoffset, NUM_EXEC_TLIST((Plan *) splan));
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual,
+								  rtoffset, NUM_EXEC_QUAL((Plan *) splan));
+			}
+			break;
+
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(plan));
