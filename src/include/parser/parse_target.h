@@ -52,6 +52,8 @@ extern List *checkInsertTargets(ParseState *pstate, List *cols,
 								List **attrnos);
 extern TupleDesc expandRecordVariable(ParseState *pstate, Var *var,
 									  int levelsup);
+extern List *ExpandAllTables(ParseState *pstate, int location);
+
 extern char *FigureColname(Node *node);
 extern char *FigureIndexColname(Node *node);
 

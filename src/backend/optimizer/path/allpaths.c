@@ -118,6 +118,9 @@ static void set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel,
 								   RangeTblEntry *rte);
 static void set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel,
 							 RangeTblEntry *rte);
+
+static TargetEntry *find_inner_tle_for_matchrecognize_expr(PlannerInfo *root, RelOptInfo *rel, Node* var);
+static Var *find_var_for_matchrecognize_tle(PlannerInfo *root, RelOptInfo *outerrel, TargetEntry *tle);
 static void set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel,
 										 RangeTblEntry *rte);
 
@@ -2346,7 +2349,8 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		pathkeys = convert_subquery_pathkeys(root,
 											 rel,
 											 subpath->pathkeys,
-											 make_tlist_from_pathtarget(subpath->pathtarget));
+											 make_tlist_from_pathtarget(subpath->pathtarget),
+											 NULL);
 
 		/* Generate outer path using this subpath */
 		add_path(rel, (Path *)
@@ -2371,7 +2375,8 @@ set_subquery_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			pathkeys = convert_subquery_pathkeys(root,
 												 rel,
 												 subpath->pathkeys,
-												 make_tlist_from_pathtarget(subpath->pathtarget));
+												 make_tlist_from_pathtarget(subpath->pathtarget),
+												 NULL);
 
 			/* Generate outer path using this subpath */
 			add_partial_path(rel, (Path *)
@@ -2557,21 +2562,141 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	add_path(rel, create_ctescan_path(root, rel, required_outer));
 }
 
+static TargetEntry*
+find_inner_tle_for_matchrecognize_expr(PlannerInfo * root, RelOptInfo *rel, Node *expr)
+{
+	Var * var = (Var *) expr;
+	Var * innervar;
+	RangeTblEntry *rte = root->simple_rte_array[rel->relid];
+	MatchRecognize *mr = rte->matchrecognize;
+	Query *query;
+	TargetEntry *tle,
+				*inner_tle;
+	Assert(rte->rtekind == RTE_MATCH_RECOGNIZE);
+	query = (Query *) mr->subquery;
+	if (!IsA(var, Var))
+		return NULL;
+	if (var->varno != rel->relid)
+		return NULL;
+	tle = get_tle_by_resno(rte->matchrecognize->targetList, var->varattno);
+	innervar = (Var *) tle->expr;
+	if (!IsA(innervar, Var))
+		return NULL;
+	inner_tle = get_tle_by_resno(query->targetList, innervar->varattno);
+	return inner_tle;
+}
+
+
+static Var*
+find_var_for_matchrecognize_tle(PlannerInfo *root, RelOptInfo *rel, TargetEntry *tle)
+{
+	ListCell *lc;
+
+	if (tle->resjunk)
+		return NULL;
+
+	foreach(lc, rel->reltarget->exprs)
+	{
+		Var * var = lfirst(lc);
+		TargetEntry *inner_tle = find_inner_tle_for_matchrecognize_expr(root, rel, (Node*) var);
+		if (inner_tle && inner_tle == tle)
+			return var;
+	}
+	return NULL;
+}
+
+
+/*
+ * Set the matchrecognize pathlist.
+ * For this, we build a subquery, ordering the rel below how we need it.
+ * */
 static void
 set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 {
-	Query * query = rte->subquery;
 	RelOptInfo *sub_final_rel;
+	MatchRecognize *mr = rte->matchrecognize;
+	Query * query = mr->subquery;
+	List *pathkeys = NIL;
+
+	/* Add the proper sort clause for partition / order clauses.
+	 * FIXME: this should be computed dynamically from the pathkeys, as we may
+	 * want to reorder the partition clause or change its operator to match the
+	 * outer pathkey. A workaround this is to simply add the partition keys to the
+	 * ORDER BY clause.
+	 */
+	query->sortClause = list_concat_copy(mr->partitionClause, mr->orderClause);
+
+	/* Consider pushing down restrictions on the partitionClause column: those
+	 * are the only ones we can consider.
+	 * We don't care about what is being safe or not here: this is not a
+	 * subquery generated from a view, or written by the user. If the input_rel
+	 * is itself a subquery, the rules will be enforced down the line.
+	 * We only care about omitting non-volatile expression.
+	 */
+	if (rel->baserestrictinfo != NIL)
+	{
+		ListCell *l;
+		List *upperrestrictlist = NIL;
+		foreach(l, rel->baserestrictinfo)
+		{
+			ListCell *lrt;
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
+			Node *qual = (Node *) rinfo->clause;
+			ListCell *lcvar;
+			bool safe = true;
+			List *matchingTargets = NIL;
+			if (rinfo->has_volatile != VOLATILITY_NOVOLATILE)
+				continue;
+			/* Check if this qual is pushdown safe. It is, only if it maps to a
+			 * an attribute in the partition clause, AND it's not volatile, as
+			 * we must ensure the qual evaluates to the same value for the
+			 * rows in a single partition.
+			 * */
+			foreach(lcvar, pull_var_clause(qual, 0))
+			{
+				Var * qualvar = lfirst(lcvar);
+				TargetEntry *inner_tle;
+				/* Only consider safe quals involving only this rel */
+				inner_tle = find_inner_tle_for_matchrecognize_expr(root, rel, qualvar);
+				if (!targetIsInSortList(inner_tle, InvalidOid, mr->partitionClause))
+				{
+					safe = false;
+					break;
+				}
+				/* Ok, the qualvar is safe to push, so append it inside a target
+				 * entry with a matching resno.
+				 */
+				matchingTargets = lappend(matchingTargets,
+										  makeTargetEntry(inner_tle->expr, qualvar->varattno,
+														  NULL, false));
+			}
+			if (safe)
+			{
+				qual = ReplaceVarsFromTargetList(qual, rel->relid, 0, rte, matchingTargets, REPLACEVARS_REPORT_ERROR, 0, NULL);
+				query->jointree->quals = make_and_qual(query->jointree->quals, qual);
+			} else {
+				upperrestrictlist = lappend(upperrestrictlist, rinfo);
+			}
+		}
+		rel->baserestrictinfo = upperrestrictlist;
+	}
+
+	/* Plan the subquery */
 	remove_unused_subquery_outputs(query, rel);
 	rel->subroot = subquery_planner(root->glob, query, root, false, 1);
 	sub_final_rel = fetch_upper_rel(rel->subroot, UPPERREL_FINAL, NULL);
+
+	/* Since we impose the ordering for the subquery, every path has the same
+	 * pathkey: we can just convert them.
+	 */
+	pathkeys = convert_subquery_pathkeys(root, rel, sub_final_rel->cheapest_total_path->pathkeys,
+							  query->targetList, find_var_for_matchrecognize_tle);
 
 	/* Just copy it for now */
 	rel->rows = sub_final_rel->cheapest_total_path->rows;
 	rel->reltarget->width = sub_final_rel->reltarget->width;
 
-	add_path(rel, (Path *) create_matchrecognize_path(root, rel, sub_final_rel->cheapest_total_path));
-	add_path(rel, (Path *) create_matchrecognize_path(root, rel, sub_final_rel->cheapest_startup_path));
+	add_path(rel, (Path *) create_matchrecognize_path(root, rel, sub_final_rel->cheapest_total_path, pathkeys));
 }
 
 

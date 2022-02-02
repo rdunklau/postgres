@@ -33,7 +33,7 @@ static bool pathkey_is_redundant(PathKey *new_pathkey, List *pathkeys);
 static bool matches_boolean_partition_clause(RestrictInfo *rinfo,
 											 RelOptInfo *partrel,
 											 int partkeycol);
-static Var *find_var_for_subquery_tle(RelOptInfo *rel, TargetEntry *tle);
+static Var *find_var_for_subquery_tle(PlannerInfo *root, RelOptInfo *rel, TargetEntry *tle);
 static bool right_merge_direction(PlannerInfo *root, PathKey *pathkey);
 
 
@@ -767,6 +767,28 @@ build_partition_pathkeys(PlannerInfo *root, RelOptInfo *partrel,
 	return retval;
 }
 
+/* Generate matchrecognize pathkeys in terms of RPVs.
+ */
+static List *
+build_matchrecognize_pathkeys(PlannerInfo *root, RelOptInfo *rel, MatchRecognize *mr)
+{
+	List *retval = NIL;
+	ListCell *lc;
+	/* If we don't have a chance of generating any useful pathkeys, do not even
+	 * try.
+	 */
+	if (has_useful_pathkeys(root, rel))
+	{
+		return retval;
+	}
+	/* We may be able to generate useful pathkeys, so try to do that.
+	 * To do it, we walk through the subquery pathkeys (which are partition keys
+	 * followed by order keys), and try to match them to an output from the
+	 * matchrecognize clause itself.
+	 */
+	return retval;
+}
+
 /*
  * build_expression_pathkey
  *	  Build a pathkeys list that describes an ordering by a single expression
@@ -818,6 +840,7 @@ build_expression_pathkey(PlannerInfo *root,
 	return pathkeys;
 }
 
+
 /*
  * convert_subquery_pathkeys
  *	  Build a pathkeys list that describes the ordering of a subquery's
@@ -837,12 +860,15 @@ build_expression_pathkey(PlannerInfo *root,
 List *
 convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 						  List *subquery_pathkeys,
-						  List *subquery_tlist)
+						  List *subquery_tlist,
+						  convert_subquery_pathkey_callback outervar_getter)
 {
 	List	   *retval = NIL;
 	int			retvallen = 0;
 	int			outer_query_keys = list_length(root->query_pathkeys);
 	ListCell   *i;
+	if (outervar_getter == NULL)
+		outervar_getter = find_var_for_subquery_tle;
 
 	foreach(i, subquery_pathkeys)
 	{
@@ -865,7 +891,7 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 			tle = get_sortgroupref_tle(sub_eclass->ec_sortref, subquery_tlist);
 			Assert(tle);
 			/* Is TLE actually available to the outer query? */
-			outer_var = find_var_for_subquery_tle(rel, tle);
+			outer_var = outervar_getter(root, rel, tle);
 			if (outer_var)
 			{
 				/* We can represent this sub_pathkey */
@@ -951,7 +977,7 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 					int			score;
 
 					/* Is TLE actually available to the outer query? */
-					outer_var = find_var_for_subquery_tle(rel, tle);
+					outer_var = outervar_getter(root, rel, tle);
 					if (!outer_var)
 						continue;
 
@@ -1036,7 +1062,7 @@ convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
  * that are unavailable above the level of the subquery scan.
  */
 static Var *
-find_var_for_subquery_tle(RelOptInfo *rel, TargetEntry *tle)
+find_var_for_subquery_tle(PlannerInfo *root, RelOptInfo *rel, TargetEntry *tle)
 {
 	ListCell   *lc;
 

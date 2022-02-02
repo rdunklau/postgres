@@ -1611,7 +1611,7 @@ typedef struct MatchSkipClause
 {
 	NodeTag		type;
 	MatchRecognizeSkipMode mode;
-	char*		symbol;
+	Node		*rpv;
 } MatchSkipClause;
 
 typedef enum RowPatternKind
@@ -1639,6 +1639,13 @@ typedef struct RowPatternQuantifier
 	Node	*ub;
 } RowPatternQuantifier;
 
+typedef struct RowPatternVar
+{
+	NodeTag type;
+	char *name;
+	Node *expr; /* NULL for the universal row pattern variable */
+} RowPatternVar;
+
 typedef struct RowPattern
 {
 	NodeTag type;
@@ -1658,13 +1665,16 @@ typedef struct RowPattern
 typedef struct MatchRecognize
 {
 	NodeTag type;
-
+	Node* subquery;
+	List *rtable;
+	List *rowpatternvariables;
 	List *orderClause;
 	List *partitionClause;
 	List *measures;
-	List *targetlist;
+	List *targetList;
+	MatchRecognizeOutMode outputMode;
+	MatchSkipClause *skipClause;
 	RowPattern *pattern;
-
 	int location;
 } MatchRecognize;
 

@@ -12315,7 +12315,7 @@ non_joined_table_ref:	relation_expr opt_alias_clause
 				}
 			| match_recognize opt_alias_clause
 				{
-					RangeMatchRecognize *n = (RangeMatchRecognize *) $1;
+					MatchRecognizeClause *n = (MatchRecognizeClause *) $1;
 					n->alias = $2;
 					$$ = (Node *) n;
 				}
@@ -12991,9 +12991,9 @@ xml_namespace_el:
 match_recognize:
 			non_joined_table_ref MATCH_RECOGNIZE '(' opt_partition_clause opt_sort_clause
 			match_measures_clause match_out_mode match_skip_clause match_pattern
-			DEFINE match_define ')'
+      DEFINE match_define ')'
 				{
-				  RangeMatchRecognize *n = makeNode(RangeMatchRecognize);
+				  MatchRecognizeClause *n = makeNode(MatchRecognizeClause);
 					n->relation = $1;
 					n->partitionClause = $4;
 					n->sortClause = $5;
@@ -13001,21 +13001,12 @@ match_recognize:
 					n->outputMode = $7;
 					n->skipClause = (MatchSkipClause *) $8;
 					n->pattern = (RowPattern *) $9;
-					n->defineList = $11;
+					n->defineClause = $11;
+					n->location = @1;
+          n->subsetClause = NIL;
 					$$ = (Node *) n;
 				}
 		;
-/*
-match_recognize:
-			non_joined_table_ref MATCH_RECOGNIZE '(' match_measures_clause match_pattern ')'
-				{
-				  RangeMatchRecognize *n = makeNode(RangeMatchRecognize);
-					n->relation = $1;
-					n->measureClause = $4;
-					$$ = (Node *) n;
-				}
-		;
-*/
 
 match_measures_clause:
 			MEASURES measure_list { $$ = $2 ; }
@@ -13068,31 +13059,31 @@ match_skip_clause:
 			AFTER MATCH SKIP PAST LAST_P ROW %prec AFTER { 
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_PAST_LASTROW;
-				n->symbol = NULL;
+				n->rpv = NULL;
 				$$ = (Node *) n;
 			}
 			| AFTER MATCH SKIP PAST FIRST_P ROW %prec AFTER {
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_PAST_FIRSTROW;
-				n->symbol = NULL;
+				n->rpv = NULL;
 				$$ = (Node *) n;
 			}
 			| AFTER MATCH SKIP TO FIRST_P ColId %prec AFTER {
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_TO_FIRSTSYMBOL;
-				n->symbol = $6;
+				n->rpv = makeString($6);
 				$$ = (Node *) n;
 			}
 			| AFTER MATCH SKIP TO LAST_P ColId %prec AFTER {
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_TO_FIRSTSYMBOL;
-				n->symbol = $6;
+				n->rpv = makeString($6);
 				$$ = (Node *) n;
 			}
 			| /*EMPTY*/ {
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_PAST_LASTROW;
-				n->symbol = NULL;
+				n->rpv = NULL;
 				$$ = (Node *) n;
 			}
 		;

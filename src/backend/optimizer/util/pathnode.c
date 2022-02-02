@@ -2114,7 +2114,7 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 }
 
 MatchRecognizePath *
-create_matchrecognize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath)
+create_matchrecognize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath, List* pathkeys)
 {
 	MatchRecognizePath *pathnode = makeNode(MatchRecognizePath);
 	pathnode->path.pathtype = T_MatchRecognizeScan;
@@ -2122,6 +2122,7 @@ create_matchrecognize_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath)
 	pathnode->subpath = subpath;
 	pathnode->path.pathtarget = rel->reltarget;
 	pathnode->path.rows = subpath->rows;
+	pathnode->path.pathkeys = pathkeys;
 	return pathnode;
 }
 

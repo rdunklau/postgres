@@ -49,7 +49,6 @@ static Node *transformAssignmentSubscripts(ParseState *pstate,
 										   int location);
 static List *ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 								 bool make_target_entry);
-static List *ExpandAllTables(ParseState *pstate, int location);
 static List *ExpandIndirectionStar(ParseState *pstate, A_Indirection *ind,
 								   bool make_target_entry, ParseExprKind exprKind);
 static List *ExpandSingleTable(ParseState *pstate, ParseNamespaceItem *nsitem,
@@ -1285,7 +1284,7 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
  *
  * The referenced relations/columns are marked as requiring SELECT access.
  */
-static List *
+List *
 ExpandAllTables(ParseState *pstate, int location)
 {
 	List	   *target = NIL;

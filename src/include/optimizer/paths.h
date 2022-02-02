@@ -216,12 +216,19 @@ extern List *build_index_pathkeys(PlannerInfo *root, IndexOptInfo *index,
 								  ScanDirection scandir);
 extern List *build_partition_pathkeys(PlannerInfo *root, RelOptInfo *partrel,
 									  ScanDirection scandir, bool *partialkeys);
+static List *build_matchrecognize_pathkeys(PlannerInfo *root, RelOptInfo *rel,
+										  MatchRecognize *mr);
+
 extern List *build_expression_pathkey(PlannerInfo *root, Expr *expr,
 									  Relids nullable_relids, Oid opno,
 									  Relids rel, bool create_it);
+
+typedef Var *(*convert_subquery_pathkey_callback) (PlannerInfo *root, RelOptInfo *outerrel, TargetEntry *tle);
+
 extern List *convert_subquery_pathkeys(PlannerInfo *root, RelOptInfo *rel,
 									   List *subquery_pathkeys,
-									   List *subquery_tlist);
+									   List *subquery_tlist,
+									   convert_subquery_pathkey_callback outervar_getter);
 extern List *build_join_pathkeys(PlannerInfo *root,
 								 RelOptInfo *joinrel,
 								 JoinType jointype,

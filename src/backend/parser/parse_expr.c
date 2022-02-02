@@ -504,6 +504,7 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		case EXPR_KIND_COPY_WHERE:
 		case EXPR_KIND_GENERATED_COLUMN:
 		case EXPR_KIND_CYCLE_MARK:
+		case EXPR_KIND_MATCH_RECOGNIZE:
 			/* okay */
 			break;
 
@@ -513,6 +514,11 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		case EXPR_KIND_PARTITION_BOUND:
 			err = _("cannot use column reference in partition bound expression");
 			break;
+
+
+
+
+
 
 			/*
 			 * There is intentionally no default: case here, so that the

@@ -649,20 +649,10 @@ typedef struct RangeTableSample
 } RangeTableSample;
 
 
-
-typedef struct RowPatternVar
-{
-	NodeTag	type;
-	char* name;
-	Node* expr;
-} RowPatternVar;
-
-
-
 /*
- * RangeMatchRecognize - represents a MATCH_RECOGNIZE ... clause
+ * MatchRecognizeClause - represents a MATCH_RECOGNIZE ... clause
  */
-typedef struct RangeMatchRecognize
+typedef struct MatchRecognizeClause
 {
 	NodeTag					type;
 	Node					*relation;
@@ -672,9 +662,11 @@ typedef struct RangeMatchRecognize
 	MatchRecognizeOutMode	outputMode;
 	MatchSkipClause			*skipClause;
 	RowPattern				*pattern;
-	List					*defineList;
+	List					*defineClause;
+	List					*subsetClause;
 	Alias					*alias;
-} RangeMatchRecognize;
+	int						location;
+} MatchRecognizeClause;
 
 
 /*
@@ -1029,7 +1021,8 @@ typedef enum RTEKind
 	RTE_RESULT,					/* RTE represents an empty FROM clause; such
 								 * RTEs are added by the planner, they're not
 								 * present during parsing or rewriting */
-	RTE_MATCH_RECOGNIZE			/* MATCH_RECOGNIZE () output relation */
+	RTE_MATCH_RECOGNIZE,		/* MATCH_RECOGNIZE () output relation */
+	RTE_ROW_PATTERN_VAR			/* MATCH_RECOGNIZE row-pattern-variable */
 } RTEKind;
 
 typedef struct RangeTblEntry

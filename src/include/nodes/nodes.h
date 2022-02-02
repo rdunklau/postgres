@@ -495,7 +495,7 @@ typedef enum NodeTag
 	T_VacuumRelation,
 	T_PublicationObjSpec,
 	T_PublicationTable,
-	T_RangeMatchRecognize,
+	T_MatchRecognizeClause,
 	T_RowPatternVar,
 	T_RowPattern,
 	T_RowPatternQuantifier,

@@ -155,6 +155,14 @@ refnameNamespaceItem(ParseState *pstate,
 			break;
 
 		pstate = pstate->parentParseState;
+		/*
+		 * Some namespaces should not be visible from their children, eg a
+		 * subquery in match_recognize cannot reference the RowPatternVars from
+		 * the match_recognize clause.
+		 * */
+		if (pstate && !pstate->p_visible_by_children)
+			break;
+
 	}
 	return NULL;
 }
@@ -192,6 +200,8 @@ scanNameSpaceForRefname(ParseState *pstate, const char *refname, int location)
 		/* If not inside LATERAL, ignore lateral-only items */
 		if (nsitem->p_lateral_only && !pstate->p_lateral_active)
 			continue;
+
+
 
 		if (strcmp(nsitem->p_names->aliasname, refname) == 0)
 		{
@@ -2038,24 +2048,23 @@ addRangeTableEntryForTableFunc(ParseState *pstate,
 ParseNamespaceItem *
 addRangeTableEntryForMatchRecognize(ParseState *pstate,
 									MatchRecognize *mr,
-									Query *subquery,
 									List *targetlist,
 									Alias *alias,
 									Index input_rteidx)
 {
 	RangeTblEntry *rte = makeNode(RangeTblEntry);
-	char	   *refname = alias->aliasname;
+	char	   *refname = alias ? alias->aliasname : pstrdup("match_recognize");
 	int	varattno;
 	int	numaliases;
 
 	ListCell *lc;
 	rte->rtekind = RTE_MATCH_RECOGNIZE;
 	rte->relid = InvalidOid;
-	rte->subquery = subquery;
+	rte->subquery = NULL;
 	rte->tablefunc = NULL;
 	rte->alias = alias;
 	/* Fill in eref correctly */
-	rte->eref = copyObject(alias);
+	rte->eref = alias ? copyObject(alias): makeAlias(refname, NIL);
 	rte->inh = false;
 	rte->inFromCl = true;
 	rte->requiredPerms = ACL_SELECT;
@@ -2076,7 +2085,7 @@ addRangeTableEntryForMatchRecognize(ParseState *pstate,
 		if (varattno > numaliases)
 		{
 			char *attrname;
-			if (tle->resjunk)
+			if (tle->resname == NULL)
 				attrname = "?";
 			else
 				attrname = pstrdup(tle->resname);
@@ -2669,11 +2678,18 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 						   include_dropped, colnames, colvars);
 			break;
 		case RTE_SUBQUERY:
+		case RTE_MATCH_RECOGNIZE:
 			{
-				/* Subquery RTE */
+				/* Subquery or match recognize RTE */
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);
 				ListCell   *tlistitem;
-
+				List		*targetList;
+				if (rte->rtekind == RTE_SUBQUERY)
+				{
+					targetList = rte->subquery->targetList;
+				} else {
+					targetList = rte->matchrecognize->targetList;
+				}
 				varattno = 0;
 				foreach(tlistitem, rte->subquery->targetList)
 				{

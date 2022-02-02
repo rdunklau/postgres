@@ -187,6 +187,7 @@ struct ParseState
 	List	   *p_namespace;	/* currently-referenceable RTEs (List of
 								 * ParseNamespaceItem) */
 	bool		p_lateral_active;	/* p_lateral_only items visible? */
+	bool		p_visible_by_children; /* Are those parsestate visible from the children N */
 	List	   *p_ctenamespace; /* current namespace for common table exprs */
 	List	   *p_future_ctes;	/* common table exprs not yet in namespace */
 	CommonTableExpr *p_parent_cte;	/* this query's containing CTE */
@@ -202,7 +203,6 @@ struct ParseState
 										 * with FOR UPDATE/FOR SHARE */
 	bool		p_resolve_unknowns; /* resolve unknown-type SELECT outputs as
 									 * type text */
-
 	QueryEnvironment *p_queryEnv;	/* curr env, incl refs to enclosing env */
 
 	/* Flags telling about things found in the query: */
@@ -211,7 +211,6 @@ struct ParseState
 	bool		p_hasTargetSRFs;
 	bool		p_hasSubLinks;
 	bool		p_hasModifyingCTE;
-	bool		p_hasMatchRecognize;
 
 	Node	   *p_last_srf;		/* most recent set-returning func/op found */
 
