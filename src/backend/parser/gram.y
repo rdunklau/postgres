@@ -13071,13 +13071,13 @@ match_skip_clause:
 			| AFTER MATCH SKIP TO FIRST_P ColId %prec AFTER {
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_TO_FIRSTSYMBOL;
-				n->rpv = makeString($6);
+				n->rpv = (Node *) makeString($6);
 				$$ = (Node *) n;
 			}
 			| AFTER MATCH SKIP TO LAST_P ColId %prec AFTER {
 				MatchSkipClause * n = makeNode(MatchSkipClause);
 				n->mode = MATCHSKIPMODE_TO_FIRSTSYMBOL;
-				n->rpv = makeString($6);
+				n->rpv = (Node *) makeString($6);
 				$$ = (Node *) n;
 			}
 			| /*EMPTY*/ {

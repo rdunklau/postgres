@@ -2348,6 +2348,33 @@ expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
+		case T_MatchRecognize:
+			{
+				MatchRecognize *mr = (MatchRecognize *) node;
+				if (walker(mr->measures, context))
+					return true;
+				if (walker(mr->orderClause, context))
+					return true;
+				if (walker(mr->partitionClause, context))
+					return true;
+				if (walker(mr->pattern, context))
+					return true;
+				if (walker(mr->rowpatternvariables, context))
+					return true;
+				if (walker(mr->targetList, context))
+					return true;
+				return walker(mr->subquery, context);
+			}
+		case T_RowPattern:
+			{
+				RowPattern *rp = (RowPattern *) node;
+				return walker(rp->args, context);
+			}
+		case T_RowPatternVar:
+			{
+				RowPatternVar *rpv = (RowPatternVar *) node;
+				return walker(rpv->expr);
+			}
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));
@@ -2540,7 +2567,8 @@ range_table_entry_walker(RangeTblEntry *rte,
 			/* nothing to do */
 			break;
 		case RTE_MATCH_RECOGNIZE:
-			/* TODO: actually recurse */
+			if (walker(rte->matchrecognize, context))
+				return true;
 			break;
 
 	}
@@ -3482,6 +3510,10 @@ range_table_mutator(List *rtable,
 				break;
 			case RTE_VALUES:
 				MUTATE(newrte->values_lists, rte->values_lists, List *);
+				break;
+			case RTE_MATCH_RECOGNIZE:
+				MUTATE(newrte->matchrecognize, rte->matchrecognize,
+					   MatchRecognize *);
 				break;
 			case RTE_CTE:
 			case RTE_NAMEDTUPLESTORE:

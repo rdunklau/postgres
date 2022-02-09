@@ -2691,7 +2691,7 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 					targetList = rte->matchrecognize->targetList;
 				}
 				varattno = 0;
-				foreach(tlistitem, rte->subquery->targetList)
+				foreach(tlistitem, targetList)
 				{
 					TargetEntry *te = (TargetEntry *) lfirst(tlistitem);
 

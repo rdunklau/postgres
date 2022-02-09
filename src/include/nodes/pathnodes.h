@@ -459,7 +459,7 @@ typedef struct PartitionSchemeData *PartitionScheme;
  * join_rel_level lists as they are not joined directly by the dynamic
  * programming algorithm.
  *
- * There is also a RelOptKind for "upper" relations, which are RelOptInfos
+ * There is also a RelOptKind for "upper" relations, which are truelOptInfos
  * that describe post-scan/join processing steps, such as aggregation.
  * Many of the fields in these RelOptInfos are meaningless, but their Path
  * fields always hold Paths showing ways to do that processing step.

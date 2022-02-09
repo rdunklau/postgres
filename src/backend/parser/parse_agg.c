@@ -556,6 +556,9 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 			errkind = true;
 			break;
 
+		case EXPR_KIND_MATCH_RECOGNIZE:
+			break;
+
 			/*
 			 * There is intentionally no default: case here, so that the
 			 * compiler will warn if we add a new ParseExprKind without
@@ -942,6 +945,9 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 			break;
 		case EXPR_KIND_CYCLE_MARK:
 			errkind = true;
+			break;
+		case EXPR_KIND_MATCH_RECOGNIZE:
+			/* okay */
 			break;
 
 			/*

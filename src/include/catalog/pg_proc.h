@@ -149,6 +149,7 @@ DECLARE_UNIQUE_INDEX(pg_proc_proname_args_nsp_index, 2691, ProcedureNameArgsNspI
 #define PROKIND_AGGREGATE 'a'
 #define PROKIND_WINDOW 'w'
 #define PROKIND_PROCEDURE 'p'
+#define PROKIND_MATCH 'm'
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result

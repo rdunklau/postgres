@@ -10115,6 +10115,26 @@
   proname => 'nth_value', prokind => 'w', prorettype => 'anyelement',
   proargtypes => 'anyelement int4', prosrc => 'window_nth_value' },
 
+# SQL-Spec MATCH RECOGNIZE functions
+{ oid => '8697', descr => 'returns the match number',
+  proname => 'match_number', prokind => 'm', prorettype => 'int8',
+  proargtypes => '', prosrc => 'match_number'},
+{ oid => '8698', descr => 'returns the row classifier',
+  proname => 'classifier', prokind => 'm', prorettype => 'varchar',
+  proargtypes => 'any', prosrc=> 'match_classifier'},
+{ oid => '8699', descr => 'navigates to prev row pattern variable',
+  proname => 'prev', prokind => 'm', prorettype => 'anyelement',
+  proargtypes => 'anyelement ', prosrc=> 'match_prev'},
+{ oid => '8700', descr => 'navigates to nth-prev row pattern variable',
+  proname => 'prev', prokind => 'm', prorettype => 'anyelement',
+  proargtypes => 'anyelement int8', prosrc=> 'match_prev_offset'},
+{ oid => '8701', descr => 'navigates to next row pattern variable',
+  proname => 'next', prokind => 'm', prorettype => 'anyelement',
+  proargtypes => 'anyelement ', prosrc=> 'match_next'},
+{ oid => '8702', descr => 'navigates to next row pattern variable',
+  proname => 'next', prokind => 'm', prorettype => 'anyelement',
+  proargtypes => 'anyelement int8', prosrc=> 'match_next_offset'},
+
 # functions for range types
 { oid => '3832', descr => 'I/O',
   proname => 'anyrange_in', provolatile => 's', prorettype => 'anyrange',

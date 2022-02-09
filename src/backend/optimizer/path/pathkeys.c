@@ -767,28 +767,6 @@ build_partition_pathkeys(PlannerInfo *root, RelOptInfo *partrel,
 	return retval;
 }
 
-/* Generate matchrecognize pathkeys in terms of RPVs.
- */
-static List *
-build_matchrecognize_pathkeys(PlannerInfo *root, RelOptInfo *rel, MatchRecognize *mr)
-{
-	List *retval = NIL;
-	ListCell *lc;
-	/* If we don't have a chance of generating any useful pathkeys, do not even
-	 * try.
-	 */
-	if (has_useful_pathkeys(root, rel))
-	{
-		return retval;
-	}
-	/* We may be able to generate useful pathkeys, so try to do that.
-	 * To do it, we walk through the subquery pathkeys (which are partition keys
-	 * followed by order keys), and try to match them to an output from the
-	 * matchrecognize clause itself.
-	 */
-	return retval;
-}
-
 /*
  * build_expression_pathkey
  *	  Build a pathkeys list that describes an ordering by a single expression

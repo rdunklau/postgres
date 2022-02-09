@@ -7562,6 +7562,7 @@ get_name_for_var_field(Var *var, int fieldno,
 		case RTE_VALUES:
 		case RTE_NAMEDTUPLESTORE:
 		case RTE_RESULT:
+		case RTE_MATCH_RECOGNIZE:
 
 			/*
 			 * This case should not occur: a column of a table, values list,

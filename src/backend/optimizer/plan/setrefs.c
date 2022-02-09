@@ -1111,7 +1111,6 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			{
 				MatchRecognizeScan *splan = (MatchRecognizeScan *) plan;
 				RelOptInfo *rel;
-				Plan	   *result;
 
 				/* Need to look up the subquery's RelOptInfo, since we need its subroot */
 				rel = find_base_rel(root, splan->scan.scanrelid);

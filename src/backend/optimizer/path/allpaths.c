@@ -2562,6 +2562,13 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 	add_path(rel, create_ctescan_path(root, rel, required_outer));
 }
 
+/* Match a Var referencing the match recognize output relation to a TLE
+ * referencing the input table.
+ *
+ * This is useful for identifying synonyms for the input realtion order by
+ * clauses, as the pattern matching keeps the initial ordering among row pattern
+ * variables.
+ */
 static TargetEntry*
 find_inner_tle_for_matchrecognize_expr(PlannerInfo * root, RelOptInfo *rel, Node *expr)
 {
@@ -2615,7 +2622,7 @@ set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *r
 {
 	RelOptInfo *sub_final_rel;
 	MatchRecognize *mr = rte->matchrecognize;
-	Query * query = mr->subquery;
+	Query * query = (Query *) mr->subquery;
 	List *pathkeys = NIL;
 
 	/* Add the proper sort clause for partition / order clauses.
@@ -2639,9 +2646,8 @@ set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *r
 		List *upperrestrictlist = NIL;
 		foreach(l, rel->baserestrictinfo)
 		{
-			ListCell *lrt;
 			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
-			Node *qual = (Node *) rinfo->clause;
+			Node *qual = (Node *) copyObject(rinfo->clause);
 			ListCell *lcvar;
 			bool safe = true;
 			List *matchingTargets = NIL;
@@ -2651,13 +2657,15 @@ set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *r
 			 * an attribute in the partition clause, AND it's not volatile, as
 			 * we must ensure the qual evaluates to the same value for the
 			 * rows in a single partition.
+			 * If any var references another relation, adjust is sublevels_up.
 			 * */
 			foreach(lcvar, pull_var_clause(qual, 0))
 			{
 				Var * qualvar = lfirst(lcvar);
 				TargetEntry *inner_tle;
-				/* Only consider safe quals involving only this rel */
-				inner_tle = find_inner_tle_for_matchrecognize_expr(root, rel, qualvar);
+				/* Only consider safe quals involving only the partitionClause.
+				 */
+				inner_tle = find_inner_tle_for_matchrecognize_expr(root, rel, (Node *) qualvar);
 				if (!targetIsInSortList(inner_tle, InvalidOid, mr->partitionClause))
 				{
 					safe = false;
@@ -2680,6 +2688,8 @@ set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *r
 		}
 		rel->baserestrictinfo = upperrestrictlist;
 	}
+	
+	/* TODO: generate parameterized pathes for the PARTITION columns. */
 
 	/* Plan the subquery */
 	remove_unused_subquery_outputs(query, rel);
@@ -2691,8 +2701,7 @@ set_matchrecognize_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *r
 	 */
 	pathkeys = convert_subquery_pathkeys(root, rel, sub_final_rel->cheapest_total_path->pathkeys,
 							  query->targetList, find_var_for_matchrecognize_tle);
-
-	/* Just copy it for now */
+	/* Just copy it for now. */
 	rel->rows = sub_final_rel->cheapest_total_path->rows;
 	rel->reltarget->width = sub_final_rel->reltarget->width;
 

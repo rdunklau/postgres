@@ -61,6 +61,7 @@ OBJS = \
 	lockfuncs.o \
 	mac.o \
 	mac8.o \
+	matchfuncs.o \
 	mcxtfuncs.o \
 	misc.o \
 	multirangetypes.o \

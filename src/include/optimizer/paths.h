@@ -216,8 +216,6 @@ extern List *build_index_pathkeys(PlannerInfo *root, IndexOptInfo *index,
 								  ScanDirection scandir);
 extern List *build_partition_pathkeys(PlannerInfo *root, RelOptInfo *partrel,
 									  ScanDirection scandir, bool *partialkeys);
-static List *build_matchrecognize_pathkeys(PlannerInfo *root, RelOptInfo *rel,
-										  MatchRecognize *mr);
 
 extern List *build_expression_pathkey(PlannerInfo *root, Expr *expr,
 									  Relids nullable_relids, Oid opno,

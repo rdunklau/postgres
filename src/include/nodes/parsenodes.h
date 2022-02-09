@@ -1021,8 +1021,7 @@ typedef enum RTEKind
 	RTE_RESULT,					/* RTE represents an empty FROM clause; such
 								 * RTEs are added by the planner, they're not
 								 * present during parsing or rewriting */
-	RTE_MATCH_RECOGNIZE,		/* MATCH_RECOGNIZE () output relation */
-	RTE_ROW_PATTERN_VAR			/* MATCH_RECOGNIZE row-pattern-variable */
+	RTE_MATCH_RECOGNIZE		/* MATCH_RECOGNIZE () output relation */
 } RTEKind;
 
 typedef struct RangeTblEntry
@@ -1172,7 +1171,7 @@ typedef struct RangeTblEntry
 	Cardinality	enrtuples;		/* estimated or actual from caller */
 
 	/*
-	 * Fields valid for MATCH_RECOGNIZE RTEs
+	 * Fields valid for MATCH_RECOGNIZE and RPVs RTE
 	 */
 	MatchRecognize *matchrecognize;
 

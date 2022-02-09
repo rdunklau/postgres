@@ -65,7 +65,7 @@ addRangeTableEntryForRPV(ParseState *pstate, RowPatternVar *rpv, ParseNamespaceI
 	}
 	else {
 		rte = makeNode(RangeTblEntry);
-		rte->rtekind = RTE_ROW_PATTERN_VAR;
+		rte->rtekind = RTE_RESULT;
 		rte->relid = InvalidOid;
 		rte->subquery = NULL;
 		rte->alias = NULL;
@@ -232,7 +232,7 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 
 	/* Process everything related to the input relation. */
 	input_nsitem = process_match_recognize_inputrel(pstate, mr_clause, m);
-	query = m->subquery;
+	query = (Query *) m->subquery;
 
 	m->rowpatternvariables = list_concat(mr_clause->defineClause, mr_clause->subsetClause);
 	/* Transform the pattern. This will add new universal rpvs for the ones not present in subset or define.
@@ -255,11 +255,6 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 	{
 		SortGroupClause *sortClause = (SortGroupClause *) lfirst(lc);
 		TargetEntry *inner_tle = get_sortgroupref_tle(sortClause->tleSortGroupRef, query->targetList);
-		/* Make sure the inner tle is not resjunk, as we will need it on the
-		 * outer query.
-		 */
-		inner_tle->resjunk = false;
-
 		/* Add a new target entry pointing to the corresponding TLE from the
 		 * input relation.
 		 */
@@ -268,6 +263,10 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 							exprTypmod((Node *) inner_tle->expr),
 							exprCollation((Node *) inner_tle->expr),
 							0);
+		/* Make sure the inner tle is not resjunk, as we will need it on the
+		 * outer query.
+		 */
+		inner_tle->resjunk = false;
 		target_list = lappend(target_list,
 							  makeTargetEntry((Expr *) var,
 											  inner_pstate->p_next_resno++,

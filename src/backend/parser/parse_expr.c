@@ -1770,6 +1770,8 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_GENERATED_COLUMN:
 			err = _("cannot use subquery in column generation expression");
 			break;
+		case EXPR_KIND_MATCH_RECOGNIZE:
+			break;
 
 			/*
 			 * There is intentionally no default: case here, so that the
@@ -3090,6 +3092,8 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "GENERATED AS";
 		case EXPR_KIND_CYCLE_MARK:
 			return "CYCLE";
+		case EXPR_KIND_MATCH_RECOGNIZE:
+			return "MATCH RECOGNIZE";
 
 			/*
 			 * There is intentionally no default: case here, so that the

@@ -281,7 +281,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		(fdresult == FUNCDETAIL_NORMAL ||
 		 fdresult == FUNCDETAIL_AGGREGATE ||
 		 fdresult == FUNCDETAIL_WINDOWFUNC ||
-		 fdresult == FUNCDETAIL_COERCION))
+		 fdresult == FUNCDETAIL_COERCION ||
+		 fdresult == FUNCDETAIL_MATCH))
 		ereport(ERROR,
 				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 				 errmsg("%s is not a procedure",
@@ -535,6 +536,15 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 							NameListToString(funcname)),
 					 parser_errposition(pstate, location)));
 	}
+	else if (fdresult == FUNCDETAIL_MATCH)
+	{
+		if (pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("match function %s cannot be called outside MATCH_RECOGNIZE",
+							NameListToString(funcname)),
+					 parser_errposition(pstate, location)));
+	}
 	else if (fdresult == FUNCDETAIL_COERCION)
 	{
 		/*
@@ -743,7 +753,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		check_srf_call_placement(pstate, last_srf, location);
 
 	/* build the appropriate output structure */
-	if (fdresult == FUNCDETAIL_NORMAL || fdresult == FUNCDETAIL_PROCEDURE)
+	if (fdresult == FUNCDETAIL_NORMAL || fdresult == FUNCDETAIL_PROCEDURE ||
+		fdresult == FUNCDETAIL_MATCH)
 	{
 		FuncExpr   *funcexpr = makeNode(FuncExpr);
 
@@ -1710,6 +1721,9 @@ func_get_detail(List *funcname,
 			case PROKIND_WINDOW:
 				result = FUNCDETAIL_WINDOWFUNC;
 				break;
+			case PROKIND_PROCEDURE
+				result = FUNCDETAIL_MATCH;
+				break;
 			default:
 				elog(ERROR, "unrecognized prokind: %c", pform->prokind);
 				result = FUNCDETAIL_NORMAL; /* keep compiler quiet */
@@ -2535,6 +2549,8 @@ check_srf_call_placement(ParseState *pstate, Node *last_srf, int location)
 			break;
 		case EXPR_KIND_OTHER:
 			/* Accept SRF here; caller must throw error if wanted */
+			break;
+		case EXPR_KIND_MATCH_RECOGNIZE:
 			break;
 		case EXPR_KIND_JOIN_ON:
 		case EXPR_KIND_JOIN_USING:
