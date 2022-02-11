@@ -28,40 +28,130 @@
 
 static void check_match_recognize_nesting(ParseState *pstate,
 										  MatchRecognizeClause *mr_clause);
-static RowPatternVar *findRowPatternVar(char *name,
+static RowPatternVarDef *findRowPatternVarDef(char *name,
 										List **rowpatternvariables,
 										bool match_universal);
 static RowPattern *transformPatternRecurse(ParseState *pstate,
 										   RowPattern * pattern,
 										   List** rowpatternvariables);
-static void transformRowPatternVariables(ParseState *pstate,
+static void transformRowPatternVarDefs(ParseState *pstate,
 										  MatchRecognize *mr,
 										  ParseNamespaceItem *input_ns);
 static ParseNamespaceItem * addRangeTableEntryForRPV(ParseState *pstate,
-													 RowPatternVar *var,
+													 RowPatternVarDef *var,
 													 ParseNamespaceItem *input_ns,
 													 Index urpv_index);
 static ParseNamespaceItem *process_match_recognize_inputrel(ParseState *pstate,
 															MatchRecognizeClause *mrclause,
 															MatchRecognize *mr);
-
 typedef struct
 {
-	Index current_rpv;
-	bool in_agg;
-	bool in_nav;
+	Index restrict_to_rpv;
+	bool single_rpv;
+	List *rpv_list;
+	ParseState *pstate;
 } rpv_mutator_context;
+
+static Node* rpv_mutator(Node *node, rpv_mutator_context * cxt);
+static Node* transformRPVRefs(ParseState *pstate, Node *node);
+
+static Node*
+transformRPVRefs(ParseState *pstate, Node *node)
+{
+	rpv_mutator_context context;
+	context.pstate = pstate;
+	context.restrict_to_rpv = 0;
+	context.single_rpv = false;
+	return expression_tree_mutator((Node *) node,
+								   rpv_mutator,
+								   (void *) &context);
+}
 
 static Node* rpv_mutator(Node *node, rpv_mutator_context * cxt)
 {
 	if (node == NULL)
 		return NULL;
+
+	/* 
+	 * We shouldn't have any aggref in a match recognize clause.
+	 * Any aggregate should have been replaced by a window function instead
+	 */
+	Assert(!IsA(node, Aggref));
+
+	/* Var nodes are replaced with RowPatternVars */
+	if (IsA(node, Var))
+	{
+		Var *var = (Var *) node;
+		RowPatternVar *rpv = makeNode(RowPatternVar);
+		/* If we need to restrict ourself to a single_rpv, set it now or throw
+		 * an error if it's already set.
+		 */
+		if (cxt->single_rpv)
+		{
+			if (cxt->restrict_to_rpv == 0)
+				cxt->restrict_to_rpv = var->varno;
+			else if (cxt->restrict_to_rpv != var->varno)
+			{
+				RowPatternVarDef *def1 = (RowPatternVarDef *) list_nth(cxt->rpv_list, cxt->restrict_to_rpv);
+				RowPatternVarDef *def2 = (RowPatternVarDef *) list_nth(cxt->rpv_list, var->varno);
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("mixing row pattern variables is not allowed in aggregates / navigation functions"),
+						 errdetail("Current row pattern variable is %s, found %s",
+								   def1->name, def2->name),
+					     parser_errposition(cxt->pstate, var->location)));
+			}
+				
+		}
+		rpv->rpvno = var->varno;
+		rpv->rpvattno = var->varattno;
+		rpv->rpvtype = var->vartype;
+		rpv->rpvtypmod = var->vartypmod;
+		rpv->rpvcollid = var->varcollid;
+		rpv->location = var->location;
+		return (Node*) rpv;
+	}
+	/* For a window function, wrap it in a match func
+	 * in.
+	 */
+	if (IsA(node, WindowFunc))
+	{
+		WindowFunc *wf = (WindowFunc *) node;
+		if (cxt->single_rpv)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("nested window / row pattern navigation calls are not allowed"),
+					 parser_errposition(cxt->pstate, wf->location)));
+
+		/* Forbid having different rpvs in a window function call. */
+		cxt->single_rpv = true;
+		wf = (WindowFunc *) expression_tree_mutator(node, rpv_mutator, cxt);
+		cxt->single_rpv = false;
+		cxt->restrict_to_rpv = 0;
+		return (Node *) wf;
+	}
+	if (IsA(node, MatchFunc))
+	{
+		MatchFunc *mf = (MatchFunc *) node;
+		if (cxt->single_rpv)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("nested window / row pattern navigation calls are not allowed"),
+					 parser_errposition(cxt->pstate, mf->location)));
+		cxt->single_rpv = true;
+		mf = (MatchFunc*) expression_tree_mutator(node, rpv_mutator, cxt);
+		mf->rpvref = cxt->restrict_to_rpv;
+		cxt->restrict_to_rpv = 0;
+		cxt->single_rpv = false;
+		return (Node *) mf;
+	}
+	return expression_tree_mutator(node, rpv_mutator, cxt);
 }
 
 
 
 static ParseNamespaceItem *
-addRangeTableEntryForRPV(ParseState *pstate, RowPatternVar *rpv, ParseNamespaceItem *input_ns, Index urpv_index)
+addRangeTableEntryForRPV(ParseState *pstate, RowPatternVarDef *rpv, ParseNamespaceItem *input_ns, Index urpv_index)
 {
 	RangeTblEntry *rte;
 	char *refname = rpv->name;
@@ -113,17 +203,17 @@ addRangeTableEntryForRPV(ParseState *pstate, RowPatternVar *rpv, ParseNamespaceI
  * We return the list of transformed rpvs.
  */
 static void
-transformRowPatternVariables(ParseState *pstate, MatchRecognize *mr, ParseNamespaceItem *input_ns)
+transformRowPatternVarDefs(ParseState *pstate, MatchRecognize *mr, ParseNamespaceItem *input_ns)
 {
 	List *rpvs = NIL;
 	ListCell* lc;
-	RowPatternVar *rpv;
+	RowPatternVarDef *rpv;
 	ParseNamespaceItem *defaultns;
 
 	/* First add an RTE and an anonymous namespace for the default universal RPV.
 	 * The RTE itself will be reused by other universal RPVs.
 	 */
-	rpv = makeNode(RowPatternVar);
+	rpv = makeNode(RowPatternVarDef);
 	rpv->name = "";
 	rpv->expr = NULL;
 	rpvs = lappend(rpvs, rpv);
@@ -150,8 +240,10 @@ transformRowPatternVariables(ParseState *pstate, MatchRecognize *mr, ParseNamesp
 	 */
 	foreach(lc, rpvs)
 	{
-		RowPatternVar *rpv = lfirst(lc);
+		RowPatternVarDef *rpv = lfirst(lc);
 		rpv->expr = transformExpr(pstate, rpv->expr, EXPR_KIND_MATCH_RECOGNIZE_DEFINE);
+		/* Perform some specific RPV processing */
+		rpv->expr = transformRPVRefs(pstate, rpv->expr);
 	}
 }
 
@@ -237,6 +329,7 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 	Query *query;
 
 	check_match_recognize_nesting(pstate, mr_clause);
+	inner_pstate->p_matchrecognize = m;
 
 	/* Namespaces associated with the match_recognize inner parse state
 	 * should not be visible from children parse states (ie, subqueries)
@@ -255,11 +348,11 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 
 	/* Transform the rpvs themselves, setting up RTEs and nsitems for them,
 	 * which are more or less duplicates from the input_nsitem.*/
-	transformRowPatternVariables(inner_pstate, m, input_nsitem);
+	transformRowPatternVarDefs(inner_pstate, m, input_nsitem);
 	/* Replace the symbol name in the MatchSkipClause by the actual RPV */
 	m->skipClause = mr_clause->skipClause;
 	if (m->skipClause->rpv != NULL)
-		m->skipClause->rpv = (Node *) findRowPatternVar(strVal(m->skipClause->rpv),
+		m->skipClause->rpv = (Node *) findRowPatternVarDef(strVal(m->skipClause->rpv),
 														&m->rowpatternvariables, false);
 
 	/* The output columns are the columns from the partition clause, followed by
@@ -298,7 +391,7 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 	 *   - transform Var references to RPVRefs
 	 *   - check the legality of constructs
 	 */
-	
+	target_list = (List *) transformRPVRefs(pstate, (Node *) target_list);
 	m->targetList = target_list;
 	pfree(inner_pstate);
 	/* Finally, add an RTE for the match recognize clause. */
@@ -310,12 +403,12 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 }
 
 
-static RowPatternVar *
-findRowPatternVar(char *name, List **rowpatternvariables, bool match_universal)
+static RowPatternVarDef *
+findRowPatternVarDef(char *name, List **rowpatternvariables, bool match_universal)
 {
 	ListCell *lc;
-	RowPatternVar *rpv;
-	RowPatternVar *urpv = NULL;
+	RowPatternVarDef *rpv;
+	RowPatternVarDef *urpv = NULL;
 	foreach(lc, *rowpatternvariables)
 	{
 		rpv = lfirst(lc);
@@ -331,7 +424,7 @@ findRowPatternVar(char *name, List **rowpatternvariables, bool match_universal)
 	{
 		if (urpv == NULL)
 		{
-			urpv = makeNode(RowPatternVar);
+			urpv = makeNode(RowPatternVarDef);
 			urpv->name = name;
 			urpv->expr = NULL;
 			*rowpatternvariables = lappend(*rowpatternvariables, urpv);
@@ -355,10 +448,10 @@ transformPatternRecurse(ParseState *pstate, RowPattern * pattern, List **rowpatt
 			return pattern;
 		case ROWPATTERN_VARREF:
 			{
-				RowPatternVar *rpv;
+				RowPatternVarDef *rpv;
 				char *symbolname;
 				symbolname = strVal(linitial(pattern->args));
-				rpv = findRowPatternVar(symbolname, rowpatternvariables, true);
+				rpv = findRowPatternVarDef(symbolname, rowpatternvariables, true);
 				pattern->args = list_make1(rpv);
 				return pattern;
 			}

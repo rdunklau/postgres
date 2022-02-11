@@ -56,6 +56,9 @@ exprType(const Node *expr)
 		case T_Param:
 			type = ((const Param *) expr)->paramtype;
 			break;
+		case T_RowPatternVar:
+			type = ((const RowPatternVar *) expr)->rpvtype;
+			break;
 		case T_Aggref:
 			type = ((const Aggref *) expr)->aggtype;
 			break;
@@ -64,6 +67,9 @@ exprType(const Node *expr)
 			break;
 		case T_WindowFunc:
 			type = ((const WindowFunc *) expr)->wintype;
+			break;
+		case T_MatchFunc:
+			type = ((const MatchFunc *) expr)->matchtype;
 			break;
 		case T_SubscriptingRef:
 			type = ((const SubscriptingRef *) expr)->refrestype;
@@ -273,6 +279,8 @@ exprTypmod(const Node *expr)
 	{
 		case T_Var:
 			return ((const Var *) expr)->vartypmod;
+		case T_RowPatternVar:
+			return ((const RowPatternVar *) expr)->rpvtypmod;
 		case T_Const:
 			return ((const Const *) expr)->consttypmod;
 		case T_Param:
@@ -738,6 +746,8 @@ expression_returns_set_walker(Node *node, void *context)
 		return false;
 	if (IsA(node, WindowFunc))
 		return false;
+	if (IsA(node, MatchFunc))
+		return false;
 
 	return expression_tree_walker(node, expression_returns_set_walker,
 								  context);
@@ -768,6 +778,9 @@ exprCollation(const Node *expr)
 		case T_Var:
 			coll = ((const Var *) expr)->varcollid;
 			break;
+		case T_RowPatternVar:
+			coll = ((const RowPatternVar *) expr)->rpvcollid;
+			break;
 		case T_Const:
 			coll = ((const Const *) expr)->constcollid;
 			break;
@@ -783,6 +796,8 @@ exprCollation(const Node *expr)
 		case T_WindowFunc:
 			coll = ((const WindowFunc *) expr)->wincollid;
 			break;
+		case T_MatchFunc:
+			coll = ((const MatchFunc *) expr)->matchcollid;
 		case T_SubscriptingRef:
 			coll = ((const SubscriptingRef *) expr)->refcollid;
 			break;
@@ -986,6 +1001,8 @@ exprInputCollation(const Node *expr)
 		case T_WindowFunc:
 			coll = ((const WindowFunc *) expr)->inputcollid;
 			break;
+		case T_MatchFunc:
+			coll = ((const MatchFunc *) expr)->inputcollid;
 		case T_FuncExpr:
 			coll = ((const FuncExpr *) expr)->inputcollid;
 			break;
@@ -1026,6 +1043,9 @@ exprSetCollation(Node *expr, Oid collation)
 		case T_Var:
 			((Var *) expr)->varcollid = collation;
 			break;
+		case T_RowPatternVar:
+			((RowPatternVar *) expr)->rpvcollid = collation;
+			break;
 		case T_Const:
 			((Const *) expr)->constcollid = collation;
 			break;
@@ -1041,6 +1061,8 @@ exprSetCollation(Node *expr, Oid collation)
 		case T_WindowFunc:
 			((WindowFunc *) expr)->wincollid = collation;
 			break;
+		case T_MatchFunc:
+			((MatchFunc *) expr)->matchcollid = collation;
 		case T_SubscriptingRef:
 			((SubscriptingRef *) expr)->refcollid = collation;
 			break;
@@ -1193,6 +1215,8 @@ exprSetInputCollation(Node *expr, Oid inputcollation)
 		case T_WindowFunc:
 			((WindowFunc *) expr)->inputcollid = inputcollation;
 			break;
+		case T_MatchFunc:
+			((WindowFunc *) expr)->inputcollid = inputcollation;
 		case T_FuncExpr:
 			((FuncExpr *) expr)->inputcollid = inputcollation;
 			break;
@@ -1263,6 +1287,9 @@ exprLocation(const Node *expr)
 			break;
 		case T_Var:
 			loc = ((const Var *) expr)->location;
+			break;
+		case T_RowPatternVar:
+			loc = ((RowPatternVar *) expr)->location;
 			break;
 		case T_Const:
 			loc = ((const Const *) expr)->location;
@@ -1924,6 +1951,7 @@ expression_tree_walker(Node *node,
 	switch (nodeTag(node))
 	{
 		case T_Var:
+		case T_RowPatternVar:
 		case T_Const:
 		case T_Param:
 		case T_CaseTestExpr:
@@ -1978,6 +2006,15 @@ expression_tree_walker(Node *node,
 										   walker, context))
 					return true;
 				if (walker((Node *) expr->aggfilter, context))
+					return true;
+			}
+			break;
+		case T_MatchFunc:
+			{
+				MatchFunc *matchfunc = (MatchFunc *) node;
+
+				if (expression_tree_walker((Node *) matchfunc->args,
+										   walker, context))
 					return true;
 			}
 			break;
@@ -2370,9 +2407,9 @@ expression_tree_walker(Node *node,
 				RowPattern *rp = (RowPattern *) node;
 				return walker(rp->args, context);
 			}
-		case T_RowPatternVar:
+		case T_RowPatternVarDef:
 			{
-				RowPatternVar *rpv = (RowPatternVar *) node;
+				RowPatternVarDef *rpv = (RowPatternVarDef *) node;
 				return walker(rpv->expr);
 			}
 		default:
@@ -2690,7 +2727,15 @@ expression_tree_mutator(Node *node,
 				return (Node *) newnode;
 			}
 			break;
-		case T_Const:
+		case T_RowPatternVar:
+			{
+				RowPatternVar		   *rpv = (RowPatternVar *) node;
+				RowPatternVar		   *newnode;
+
+				FLATCOPY(newnode, rpv, RowPatternVar);
+				return (Node *) newnode;
+			}
+			break;		case T_Const:
 			{
 				Const	   *oldnode = (Const *) node;
 				Const	   *newnode;
@@ -2770,6 +2815,14 @@ expression_tree_mutator(Node *node,
 				return (Node *) newnode;
 			}
 			break;
+		case T_MatchFunc:
+			{
+				MatchFunc *mfunc = (MatchFunc *) node;
+				MatchFunc *newnode;
+				FLATCOPY(newnode, mfunc, MatchFunc);
+				MUTATE(newnode->args, mfunc->args, List *);
+				return (Node *) newnode;
+			}
 		case T_SubscriptingRef:
 			{
 				SubscriptingRef *sbsref = (SubscriptingRef *) node;

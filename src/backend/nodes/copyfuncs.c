@@ -1585,6 +1585,26 @@ _copyWindowFunc(const WindowFunc *from)
 }
 
 /*
+ * _copyMatchFunc
+ */
+static MatchFunc *
+_copyMatchFunc(const MatchFunc *from)
+{
+	MatchFunc *newnode = makeNode(MatchFunc);
+
+	COPY_SCALAR_FIELD(matchfnoid);
+	COPY_SCALAR_FIELD(matchtype);
+	COPY_SCALAR_FIELD(matchcollid);
+	COPY_SCALAR_FIELD(inputcollid);
+	COPY_NODE_FIELD(args);
+	COPY_SCALAR_FIELD(rpvref);
+	COPY_LOCATION_FIELD(location);
+
+	return newnode;
+}
+
+
+/*
  * _copySubscriptingRef
  */
 static SubscriptingRef *
@@ -5213,6 +5233,9 @@ copyObjectImpl(const void *from)
 			break;
 		case T_WindowFunc:
 			retval = _copyWindowFunc(from);
+			break;
+		case T_MatchFunc:
+			retval = _copyMatchFunc(from);
 			break;
 		case T_SubscriptingRef:
 			retval = _copySubscriptingRef(from);

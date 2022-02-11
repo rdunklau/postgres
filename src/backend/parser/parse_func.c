@@ -99,6 +99,8 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	bool		agg_distinct = (fn ? fn->agg_distinct : false);
 	bool		func_variadic = (fn ? fn->func_variadic : false);
 	CoercionForm funcformat = (fn ? fn->funcformat : COERCE_EXPLICIT_CALL);
+	FunctionSemantic funcsemantic = (fn ? fn->funcSemantic : FUNCTION_SEMANTIC_DEFAULT);
+	bool		is_matchrecognize;
 	bool		could_be_projection;
 	Oid			rettype;
 	Oid			funcid;
@@ -117,6 +119,11 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	FuncDetailCode fdresult;
 	char		aggkind = 0;
 	ParseCallbackState pcbstate;
+
+
+	is_matchrecognize = (pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_DEFINE ||
+						 pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_MEASURES);
+
 
 	/*
 	 * If there's an aggregate filter, transform it using transformWhereClause
@@ -347,27 +354,80 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 					 errmsg("OVER specified, but %s is not a window function nor an aggregate function",
 							NameListToString(funcname)),
 					 parser_errposition(pstate, location)));
+		if (funcsemantic != FUNCTION_SEMANTIC_DEFAULT)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("RUNNING/FINAL specified, but %s is not a window, match or aggregate function",
+							NameListToString(funcname)),
+					 parser_errposition(pstate, location)));
 	}
 
-	/* If we are not in a MATCH_RECOGNIZE define or measures clause, reject
+	/*
+	 * If we are not in a MATCH_RECOGNIZE define or measures clause, reject
 	 * FINAL / RUNNING keywords.
-	 * Additionally, reject FINAL for DEFINE
+	 * Additionally, reject FINAL for DEFINE clauses.
 	 */
-	if (fn->funcSemantic == FUNCTION_SEMANTIC_FINAL &&
+	if (funcsemantic == FUNCTION_SEMANTIC_FINAL &&
 		pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("FINAL keyword for function calls is not allowed in %s",
 						ParseExprKindName(pstate->p_expr_kind)),
 				parser_errposition(pstate, location)));
-	if (fn->funcSemantic == FUNCTION_SEMANTIC_RUNNING && 
-		pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_DEFINE &&
-		pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
+	if (funcsemantic == FUNCTION_SEMANTIC_RUNNING &&
+		!is_matchrecognize)
 		ereport(ERROR,
 				(errcode(ERRCODE_SYNTAX_ERROR),
 				 errmsg("RUNNING keyword for function calls is not allowed in %s",
 						ParseExprKindName(pstate->p_expr_kind)),
 				 parser_errposition(pstate, location)));
+	/*
+	 * Fill in default values for match recognize aggregates.
+	 */
+	if (is_matchrecognize)
+	{
+		/*
+		 * We do not support window functions with an OVER clause
+		 * inside match recognize for now.
+		 */
+		Assert(pstate->p_matchrecognize);
+		if (over != NULL)
+			ereport(ERROR,
+					(errcode(ERRCODE_SYNTAX_ERROR),
+					 errmsg("OVER clause is not supported in %s",
+							ParseExprKindName(pstate->p_expr_kind)),
+					 parser_errposition(pstate, location)));
+
+		if (funcsemantic == FUNCTION_SEMANTIC_DEFAULT)
+			funcsemantic = FUNCTION_SEMANTIC_RUNNING;
+		if(fdresult == FUNCDETAIL_AGGREGATE || fdresult == FUNCDETAIL_WINDOWFUNC)
+		{
+
+			over = makeNode(WindowDef);
+			over->name = NULL;
+			over->refname = NULL;
+			over->partitionClause = NIL;
+			/* Now we inject an order clause matching the matchrecognize list
+			 * if needed.
+			 * We can't do this before, because we need to know what kind of
+			 * function we're dealing with, and we can't do it after either as
+			 * transformWindowFuncCall is responsible for ensuring the windows
+			 * integrity.
+			 *
+			 * The latter rewriting of Vars into RPVs will also process the
+			 * orderClause.
+			 */
+			if (funcsemantic == FUNCTION_SEMANTIC_RUNNING)
+			{
+				over->orderClause = list_copy_deep(pstate->p_matchrecognize->orderClause);
+			}
+			else 
+				over->orderClause = NIL;
+			over->frameOptions = FRAMEOPTION_DEFAULTS;
+			over->startOffset = NULL;
+			over->endOffset = NULL;
+		}
+	}
 
 	/*
 	 * So far so good, so do some fdresult-type-specific processing.
@@ -558,8 +618,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	}
 	else if (fdresult == FUNCDETAIL_MATCH)
 	{
-		if (pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_DEFINE &&
-			pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
+		if (!is_matchrecognize)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("match function %s cannot be called outside MATCH_RECOGNIZE",
@@ -868,9 +927,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		 * We don't do it here because we will need to recurse into the tree
 		 * anyway, so might as well do it just once.
 		 */
-
-
-
+		retval = (Node *) mfunc;
 	}
 	else
 	{
@@ -886,7 +943,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		wfunc->args = fargs;
 		/* winref will be set by transformWindowFuncCall */
 		wfunc->winstar = agg_star;
-		wfunc->winagg = (fdresult == FUNCDETAIL_AGGREGATE);
+		wfunc->winagg = (fdresult == FUNCDETAIL_AGGREGATE && !is_matchrecognize);
 		wfunc->aggfilter = agg_filter;
 		wfunc->location = location;
 

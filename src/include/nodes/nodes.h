@@ -206,6 +206,8 @@ typedef enum NodeTag
 	T_IntoClause,
 	T_MatchRecognize,
 	T_MatchSkipClause,
+	T_RowPatternVar,
+	T_RowPatternVarDef,
 
 	/*
 	 * TAGS FOR EXPRESSION STATE NODES (execnodes.h)
@@ -497,7 +499,6 @@ typedef enum NodeTag
 	T_PublicationObjSpec,
 	T_PublicationTable,
 	T_MatchRecognizeClause,
-	T_RowPatternVar,
 	T_RowPattern,
 	T_RowPatternQuantifier,
 

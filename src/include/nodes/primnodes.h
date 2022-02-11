@@ -392,6 +392,7 @@ typedef struct WindowFunc
 	Index		winref;			/* index of associated WindowClause */
 	bool		winstar;		/* true if argument list was really '*' */
 	bool		winagg;			/* is function a simple aggregate? */
+	Index		winrpv;			/* index of associated rpv if any */
 	int			location;		/* token location, or -1 if unknown */
 } WindowFunc;
 
@@ -407,7 +408,7 @@ typedef struct MatchFunc
 	Oid		inputcollid;
 	List	*args;
 	Index	rpvref;
-	int 	location;
+	int		location;
 } MatchFunc;
 
 /*
@@ -502,20 +503,6 @@ typedef enum CoercionForm
 } CoercionForm;
 
 
-/*
- * MatchRecognizeSemantics
- *
- * How to compute an aggregate or row-pattern navigation function.
- *
- * We keep a "default" value in order to throw error if the keyword is used
- * outside it's intended context.
- */
-typedef enum MatchRecognizeFuncSemantic
-{
-	FUNCTION_SEMANTIC_DEFAULT,
-	FUNCTION_SEMANTIC_RUNNING,
-	FUNCTION_SEMANTIC_FINAL
-} MatchRecognizeFuncSemantic;
 
 /*
  * FuncExpr - expression node for a function call
@@ -1670,12 +1657,13 @@ typedef struct RowPatternQuantifier
 	Node	*ub;
 } RowPatternQuantifier;
 
-typedef struct RowPatternVar
+typedef struct RowPatternVarDef
 {
 	NodeTag type;
 	char *name;
 	Node *expr; /* NULL for the universal row pattern variable */
-} RowPatternVar;
+} RowPatternVarDef;
+
 
 typedef struct RowPattern
 {
@@ -1692,6 +1680,17 @@ typedef struct RowPattern
 	RowPatternQuantifier *quantifier;
 	bool		reluctant;
 } RowPattern;
+
+typedef struct RowPatternVar
+{
+	Expr	xpr;
+	int		rpvno; /* index of this row pattern var in the rpvlist */
+	AttrNumber rpvattno; /* attribute number of this var or zero for the whole rpv */
+	Oid		rpvtype;
+	int32	rpvtypmod;
+	Oid		rpvcollid;
+	int		location;
+} RowPatternVar;
 
 typedef struct MatchRecognize
 {

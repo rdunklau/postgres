@@ -356,6 +356,21 @@ typedef struct RoleSpec
 } RoleSpec;
 
 /*
+ * FunctionSemantic
+ *
+ * How to compute an aggregate or row-pattern navigation function.
+ *
+ * We keep a "default" value in order to throw error if the keyword is used
+ * outside it's intended context.
+ */
+typedef enum FunctionSemantic
+{
+	FUNCTION_SEMANTIC_DEFAULT,
+	FUNCTION_SEMANTIC_RUNNING,
+	FUNCTION_SEMANTIC_FINAL
+} FunctionSemantic;
+
+/*
  * FuncCall - a function or aggregate invocation
  *
  * agg_order (if not NIL) indicates we saw 'foo(... ORDER BY ...)', or if
@@ -386,7 +401,7 @@ typedef struct FuncCall
 	bool		agg_distinct;	/* arguments were labeled DISTINCT */
 	bool		func_variadic;	/* last argument was labeled VARIADIC */
 	CoercionForm funcformat;	/* how to display this node */
-	MatchRecognizeFuncSemantic funcSemantic;  /* is this function RUNNING or FINAL ? */
+	FunctionSemantic funcSemantic;  /* is this function RUNNING or FINAL ? */
 	int			location;		/* token location, or -1 if unknown */
 } FuncCall;
 

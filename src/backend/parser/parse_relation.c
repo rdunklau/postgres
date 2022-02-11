@@ -157,7 +157,7 @@ refnameNamespaceItem(ParseState *pstate,
 		pstate = pstate->parentParseState;
 		/*
 		 * Some namespaces should not be visible from their children, eg a
-		 * subquery in match_recognize cannot reference the RowPatternVars from
+		 * subquery in match_recognize cannot reference the RowPatternVarDefs from
 		 * the match_recognize clause.
 		 * */
 		if (pstate && !pstate->p_visible_by_children)
