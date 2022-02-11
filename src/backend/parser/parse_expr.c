@@ -504,7 +504,8 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 		case EXPR_KIND_COPY_WHERE:
 		case EXPR_KIND_GENERATED_COLUMN:
 		case EXPR_KIND_CYCLE_MARK:
-		case EXPR_KIND_MATCH_RECOGNIZE:
+		case EXPR_KIND_MATCH_RECOGNIZE_DEFINE:
+		case EXPR_KIND_MATCH_RECOGNIZE_MEASURES:
 			/* okay */
 			break;
 
@@ -596,6 +597,11 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 					nsitem = refnameNamespaceItem(pstate, NULL, colname,
 												  cref->location,
 												  &levels_up);
+					if (nsitem == NULL &&
+						(pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_DEFINE ||
+						pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_MEASURES))
+						nsitem = refnameNamespaceItem(pstate, NULL, "", cref->location, &levels_up);
+
 					if (nsitem)
 						node = transformWholeRowRef(pstate, nsitem, levels_up,
 													cref->location);
@@ -614,6 +620,14 @@ transformColumnRef(ParseState *pstate, ColumnRef *cref)
 				nsitem = refnameNamespaceItem(pstate, nspname, relname,
 											  cref->location,
 											  &levels_up);
+				/* If we are in a match_recognize MEASURES clause, then an
+				 * undefined RPV matches to the universal, unnamed RPV
+				 */
+				if (nsitem == NULL &&
+					(pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_DEFINE ||
+					 pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_MEASURES))
+						nsitem = refnameNamespaceItem(pstate, nspname, "", cref->location, &levels_up);
+
 				if (nsitem == NULL)
 				{
 					crerr = CRERR_NO_RTE;
@@ -1770,7 +1784,8 @@ transformSubLink(ParseState *pstate, SubLink *sublink)
 		case EXPR_KIND_GENERATED_COLUMN:
 			err = _("cannot use subquery in column generation expression");
 			break;
-		case EXPR_KIND_MATCH_RECOGNIZE:
+		case EXPR_KIND_MATCH_RECOGNIZE_DEFINE:
+		case EXPR_KIND_MATCH_RECOGNIZE_MEASURES:
 			break;
 
 			/*
@@ -3092,8 +3107,10 @@ ParseExprKindName(ParseExprKind exprKind)
 			return "GENERATED AS";
 		case EXPR_KIND_CYCLE_MARK:
 			return "CYCLE";
-		case EXPR_KIND_MATCH_RECOGNIZE:
-			return "MATCH RECOGNIZE";
+		case EXPR_KIND_MATCH_RECOGNIZE_DEFINE:
+			return "DEFINE";
+		case EXPR_KIND_MATCH_RECOGNIZE_MEASURES:
+			return "MEASURES";
 
 			/*
 			 * There is intentionally no default: case here, so that the

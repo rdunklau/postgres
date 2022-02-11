@@ -266,6 +266,11 @@ typedef struct ExprContext
 	/* Link to containing EState (NULL if a standalone ExprContext) */
 	struct EState *ecxt_estate;
 
+	/* For expressions in match_recognize nodes, we have as many tuple slots as we have
+	 * rpvs: Their varnos are interpreted as a position in this array.
+	 */
+	TupleTableSlot ** ecxt_rpv_slots;
+
 	/* Functions to call back when ExprContext is shut down or rescanned */
 	ExprContext_CB *ecxt_callbacks;
 } ExprContext;
@@ -2445,6 +2450,9 @@ typedef struct MatchRecognizeScanState
 {
 	ScanState ss;
 	PlanState *subplan;
+
+	int	num_rpvs;
+
 } MatchRecognizeScanState;
 
 /* ----------------

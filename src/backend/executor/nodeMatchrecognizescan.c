@@ -60,7 +60,7 @@ ExecInitMatchRecognizeScan(MatchRecognizeScan *node, EState *estate, int eflags)
 	scanstate->ss.ps.ExecProcNode = ExecMatchRecognizeScan;
 	scanstate->subplan = ExecInitNode(node->subplan, estate, eflags);
 	ExecInitResultTupleSlotTL(&scanstate->ss.ps, &TTSOpsVirtual);
-
+	ExecAssignExprContext(estate, &scanstate->ss.ps);
 	return scanstate;
 
 }
@@ -70,4 +70,5 @@ void
 ExecEndMatchRecognizeScan(MatchRecognizeScanState *node)
 {
 	ExecFreeExprContext(&node->ss.ps);
+	ExecEndNode(outerPlanState(node));
 }

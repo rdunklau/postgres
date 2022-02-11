@@ -1179,6 +1179,11 @@ ExpandColumnRefStar(ParseState *pstate, ColumnRef *cref,
 				nsitem = refnameNamespaceItem(pstate, nspname, relname,
 											  cref->location,
 											  &levels_up);
+				if (nsitem == NULL && (pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_DEFINE ||
+									   pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_MEASURES))
+					nsitem = refnameNamespaceItem(pstate, nspname, "", cref->location,
+												  &levels_up);
+
 				break;
 			case 3:
 				nspname = strVal(linitial(fields));

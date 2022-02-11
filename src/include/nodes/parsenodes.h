@@ -368,6 +368,10 @@ typedef struct RoleSpec
  *
  * Normally, you'd initialize this via makeFuncCall() and then only change the
  * parts of the struct its defaults don't match afterwards, as needed.
+ *
+ * For functions called in match_recognize measures and define clauses, an additional
+ * mode RUNNING or FINAL can be specified.
+ *
  */
 typedef struct FuncCall
 {
@@ -382,6 +386,7 @@ typedef struct FuncCall
 	bool		agg_distinct;	/* arguments were labeled DISTINCT */
 	bool		func_variadic;	/* last argument was labeled VARIADIC */
 	CoercionForm funcformat;	/* how to display this node */
+	MatchRecognizeFuncSemantic funcSemantic;  /* is this function RUNNING or FINAL ? */
 	int			location;		/* token location, or -1 if unknown */
 } FuncCall;
 

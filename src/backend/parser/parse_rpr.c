@@ -45,6 +45,18 @@ static ParseNamespaceItem *process_match_recognize_inputrel(ParseState *pstate,
 															MatchRecognizeClause *mrclause,
 															MatchRecognize *mr);
 
+typedef struct
+{
+	Index current_rpv;
+	bool in_agg;
+	bool in_nav;
+} rpv_mutator_context;
+
+static Node* rpv_mutator(Node *node, rpv_mutator_context * cxt)
+{
+	if (node == NULL)
+		return NULL;
+}
 
 
 
@@ -116,12 +128,12 @@ transformRowPatternVariables(ParseState *pstate, MatchRecognize *mr, ParseNamesp
 	rpv->expr = NULL;
 	rpvs = lappend(rpvs, rpv);
 	defaultns = addRangeTableEntryForRPV(pstate, rpv, input_ns, 0);
-	defaultns->p_rel_visible = false;
+	defaultns->p_rel_visible = true;
 	defaultns->p_cols_visible = true;
 	pstate->p_namespace = lappend(pstate->p_namespace, defaultns);
 
 
-	/* Extract all row pattern variables from the define, and subset 
+	/* Extract all row pattern variables from the define, and subset
 	 * clauses, and add a new RTE and nsitem for them.
 	 * We do not transform the expressions themselves yet, as they can reference
 	 * each other.
@@ -139,7 +151,7 @@ transformRowPatternVariables(ParseState *pstate, MatchRecognize *mr, ParseNamesp
 	foreach(lc, rpvs)
 	{
 		RowPatternVar *rpv = lfirst(lc);
-		rpv->expr = transformExpr(pstate, rpv->expr, EXPR_KIND_MATCH_RECOGNIZE);
+		rpv->expr = transformExpr(pstate, rpv->expr, EXPR_KIND_MATCH_RECOGNIZE_DEFINE);
 	}
 }
 
@@ -150,7 +162,8 @@ check_match_recognize_nesting(ParseState *pstate, MatchRecognizeClause *mr_claus
 {
 	while (pstate != NULL)
 	{
-		if (pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE)
+		if (pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_DEFINE ||
+			pstate->p_expr_kind == EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("nesting MATCH_RECOGNIZE clauses is prohibited"),
@@ -159,7 +172,7 @@ check_match_recognize_nesting(ParseState *pstate, MatchRecognizeClause *mr_claus
 	}
 }
 
-/* 
+/*
  * Process everything related to the match reocgnize input rel.
  * This includes:
  *  - transforming the input rel
@@ -180,7 +193,7 @@ process_match_recognize_inputrel(ParseState *pstate, MatchRecognizeClause *mr_cl
 	 */
 	Assert(list_length(input_pstate->p_namespace) == 1);
 	input_nsitem = linitial(input_pstate->p_namespace);
-	
+
 	query = makeNode(Query);
 	query->commandType = CMD_SELECT;
 	query->targetList = ExpandAllTables(input_pstate, 0);
@@ -191,7 +204,7 @@ process_match_recognize_inputrel(ParseState *pstate, MatchRecognizeClause *mr_cl
 	mr->orderClause = transformSortClause(input_pstate,
 									  mr_clause->sortClause,
 									  &query->targetList,
-									  EXPR_KIND_MATCH_RECOGNIZE,
+									  EXPR_KIND_WINDOW_ORDER,
 									  true);
 
 	mr->subquery = (Node *) query;
@@ -200,7 +213,7 @@ process_match_recognize_inputrel(ParseState *pstate, MatchRecognizeClause *mr_cl
 											  NULL,
 											  &query->targetList,
 											  mr->orderClause,
-											  EXPR_KIND_MATCH_RECOGNIZE,
+											  EXPR_KIND_WINDOW_PARTITION,
 											  true);
 
 	pfree(input_pstate);
@@ -239,6 +252,7 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 	 * We use a fresh parse context for this, as only the RPVs are visible in the measures and define clauses.
 	 */
 	m->pattern = transformPatternRecurse(inner_pstate, mr_clause->pattern, &m->rowpatternvariables);
+
 	/* Transform the rpvs themselves, setting up RTEs and nsitems for them,
 	 * which are more or less duplicates from the input_nsitem.*/
 	transformRowPatternVariables(inner_pstate, m, input_nsitem);
@@ -274,13 +288,18 @@ transformMatchRecognizeClause(ParseState *pstate, MatchRecognizeClause *mr_claus
 											  false));
 	}
 
-	m->measures = transformTargetList(inner_pstate, mr_clause->measureClause, EXPR_KIND_MATCH_RECOGNIZE);
+	m->measures = transformTargetList(inner_pstate, mr_clause->measureClause, EXPR_KIND_MATCH_RECOGNIZE_MEASURES);
 	foreach(lc, m->measures)
 	{
 		target_list = lappend(target_list, lfirst(lc));
 	}
+
+	/* Now we recurse into the define and measures clause to:
+	 *   - transform Var references to RPVRefs
+	 *   - check the legality of constructs
+	 */
+	
 	m->targetList = target_list;
-	m->rtable = inner_pstate->p_rtable;
 	pfree(inner_pstate);
 	/* Finally, add an RTE for the match recognize clause. */
 	return addRangeTableEntryForMatchRecognize(pstate,
@@ -296,22 +315,28 @@ findRowPatternVar(char *name, List **rowpatternvariables, bool match_universal)
 {
 	ListCell *lc;
 	RowPatternVar *rpv;
+	RowPatternVar *urpv = NULL;
 	foreach(lc, *rowpatternvariables)
 	{
 		rpv = lfirst(lc);
 		if (strcmp(rpv->name, name) == 0)
 			return rpv;
+		if (strcmp(rpv->name, "") == 0)
+			urpv = rpv;
 	}
 	/* If the row pattern var doesn't exists, return the universal
 	 * row pattern variable if allowed by the caller
 	 */
 	if (match_universal)
 	{
-		rpv = makeNode(RowPatternVar);
-		rpv->name = name;
-		rpv->expr = NULL;
-		*rowpatternvariables = lappend(*rowpatternvariables, rpv);
-		return rpv;
+		if (urpv == NULL)
+		{
+			urpv = makeNode(RowPatternVar);
+			urpv->name = name;
+			urpv->expr = NULL;
+			*rowpatternvariables = lappend(*rowpatternvariables, urpv);
+		}
+		return urpv;
 	}
 	return NULL;
 }

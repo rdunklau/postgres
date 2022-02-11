@@ -597,6 +597,7 @@ makeFuncCall(List *name, List *args, CoercionForm funcformat, int location)
 	n->func_variadic = false;
 	n->funcformat = funcformat;
 	n->location = location;
+	n->funcSemantic = FUNCTION_SEMANTIC_DEFAULT;
 	return n;
 }
 

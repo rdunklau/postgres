@@ -556,7 +556,8 @@ check_agglevels_and_constraints(ParseState *pstate, Node *expr)
 			errkind = true;
 			break;
 
-		case EXPR_KIND_MATCH_RECOGNIZE:
+		case EXPR_KIND_MATCH_RECOGNIZE_DEFINE:
+		case EXPR_KIND_MATCH_RECOGNIZE_MEASURES:
 			break;
 
 			/*
@@ -946,7 +947,8 @@ transformWindowFuncCall(ParseState *pstate, WindowFunc *wfunc,
 		case EXPR_KIND_CYCLE_MARK:
 			errkind = true;
 			break;
-		case EXPR_KIND_MATCH_RECOGNIZE:
+		case EXPR_KIND_MATCH_RECOGNIZE_DEFINE:
+		case EXPR_KIND_MATCH_RECOGNIZE_MEASURES:
 			/* okay */
 			break;
 

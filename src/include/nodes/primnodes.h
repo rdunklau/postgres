@@ -396,6 +396,21 @@ typedef struct WindowFunc
 } WindowFunc;
 
 /*
+ * MatchFunc
+ */
+typedef struct MatchFunc
+{
+	Expr	xpr;
+	Oid		matchfnoid;
+	Oid		matchtype;
+	Oid		matchcollid;
+	Oid		inputcollid;
+	List	*args;
+	Index	rpvref;
+	int 	location;
+} MatchFunc;
+
+/*
  * SubscriptingRef: describes a subscripting operation over a container
  * (array, etc).
  *
@@ -485,6 +500,22 @@ typedef enum CoercionForm
 	COERCE_IMPLICIT_CAST,		/* implicit cast, so hide it */
 	COERCE_SQL_SYNTAX			/* display with SQL-mandated special syntax */
 } CoercionForm;
+
+
+/*
+ * MatchRecognizeSemantics
+ *
+ * How to compute an aggregate or row-pattern navigation function.
+ *
+ * We keep a "default" value in order to throw error if the keyword is used
+ * outside it's intended context.
+ */
+typedef enum MatchRecognizeFuncSemantic
+{
+	FUNCTION_SEMANTIC_DEFAULT,
+	FUNCTION_SEMANTIC_RUNNING,
+	FUNCTION_SEMANTIC_FINAL
+} MatchRecognizeFuncSemantic;
 
 /*
  * FuncExpr - expression node for a function call
@@ -1666,7 +1697,6 @@ typedef struct MatchRecognize
 {
 	NodeTag type;
 	Node* subquery;
-	List *rtable;
 	List *rowpatternvariables;
 	List *orderClause;
 	List *partitionClause;

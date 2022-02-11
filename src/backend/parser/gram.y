@@ -689,7 +689,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	EXCLUDE EXCLUDING EXCLUSIVE EXECUTE EXISTS EXPLAIN EXPRESSION
 	EXTENSION EXTERNAL EXTRACT
 
-	FALSE_P FAMILY FETCH FILTER FINALIZE FIRST_P FLOAT_P FOLLOWING FOR
+	FALSE_P FAMILY FETCH FILTER FINAL FINALIZE FIRST_P FLOAT_P FOLLOWING FOR
 	FORCE FOREIGN FORWARD FREEZE FROM FULL FUNCTION FUNCTIONS
 
 	GENERATED GLOBAL GRANT GRANTED GREATEST GROUP_P GROUPING GROUPS
@@ -730,7 +730,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	RANGE READ REAL REASSIGN RECHECK RECURSIVE REF REFERENCES REFERENCING
 	REFRESH REINDEX RELATIVE_P RELEASE RENAME REPEATABLE REPLACE REPLICA
 	RESET RESTART RESTRICT RETURN RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROLLUP
-	ROUTINE ROUTINES ROW ROWS RULE
+	ROUTINE ROUTINES ROW ROWS RULE RUNNING
 
 	SAVEPOINT SCHEMA SCHEMAS SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
@@ -14468,6 +14468,18 @@ func_expr: func_application within_group_clause filter_clause over_clause
 				}
 			| func_expr_common_subexpr
 				{ $$ = $1; }
+			| FINAL func_application
+				{
+          FuncCall * fc = (FuncCall *) $2;
+					fc->funcSemantic = FUNCTION_SEMANTIC_FINAL;
+          $$ = (Node *) fc;
+				}
+			| RUNNING func_application
+				{
+          FuncCall * fc = (FuncCall *) $2;
+					fc->funcSemantic = FUNCTION_SEMANTIC_RUNNING;
+          $$ = (Node *) fc;
+				}
 		;
 
 /*
@@ -16303,6 +16315,7 @@ type_func_name_keyword:
 			| CONCURRENTLY
 			| CROSS
 			| CURRENT_SCHEMA
+      | FINAL
 			| FREEZE
 			| FULL
 			| ILIKE
@@ -16318,6 +16331,7 @@ type_func_name_keyword:
 			| OUTER_P
 			| OVERLAPS
 			| RIGHT
+      | RUNNING
 			| SIMILAR
 			| TABLESAMPLE
 			| VERBOSE
@@ -16554,6 +16568,7 @@ bare_label_keyword:
 			| EXTRACT
 			| FALSE_P
 			| FAMILY
+      | FINAL
 			| FINALIZE
 			| FIRST_P
 			| FLOAT_P
@@ -16734,6 +16749,7 @@ bare_label_keyword:
 			| ROW
 			| ROWS
 			| RULE
+      | RUNNING
 			| SAVEPOINT
 			| SCHEMA
 			| SCHEMAS

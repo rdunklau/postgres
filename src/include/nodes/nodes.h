@@ -161,6 +161,7 @@ typedef enum NodeTag
 	T_Aggref,
 	T_GroupingFunc,
 	T_WindowFunc,
+	T_MatchFunc,
 	T_SubscriptingRef,
 	T_FuncExpr,
 	T_NamedArgExpr,

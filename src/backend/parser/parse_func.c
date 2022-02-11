@@ -349,6 +349,26 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 					 parser_errposition(pstate, location)));
 	}
 
+	/* If we are not in a MATCH_RECOGNIZE define or measures clause, reject
+	 * FINAL / RUNNING keywords.
+	 * Additionally, reject FINAL for DEFINE
+	 */
+	if (fn->funcSemantic == FUNCTION_SEMANTIC_FINAL &&
+		pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("FINAL keyword for function calls is not allowed in %s",
+						ParseExprKindName(pstate->p_expr_kind)),
+				parser_errposition(pstate, location)));
+	if (fn->funcSemantic == FUNCTION_SEMANTIC_RUNNING && 
+		pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_DEFINE &&
+		pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
+		ereport(ERROR,
+				(errcode(ERRCODE_SYNTAX_ERROR),
+				 errmsg("RUNNING keyword for function calls is not allowed in %s",
+						ParseExprKindName(pstate->p_expr_kind)),
+				 parser_errposition(pstate, location)));
+
 	/*
 	 * So far so good, so do some fdresult-type-specific processing.
 	 */
@@ -538,12 +558,19 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 	}
 	else if (fdresult == FUNCDETAIL_MATCH)
 	{
-		if (pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE)
+		if (pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_DEFINE &&
+			pstate->p_expr_kind != EXPR_KIND_MATCH_RECOGNIZE_MEASURES)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("match function %s cannot be called outside MATCH_RECOGNIZE",
 							NameListToString(funcname)),
 					 parser_errposition(pstate, location)));
+		if (agg_within_group)
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("match function %s cannot have WITHIN GROUP",
+							NameListToString(funcname)),
+					parser_errposition(pstate, location)));
 	}
 	else if (fdresult == FUNCDETAIL_COERCION)
 	{
@@ -753,8 +780,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		check_srf_call_placement(pstate, last_srf, location);
 
 	/* build the appropriate output structure */
-	if (fdresult == FUNCDETAIL_NORMAL || fdresult == FUNCDETAIL_PROCEDURE ||
-		fdresult == FUNCDETAIL_MATCH)
+	if (fdresult == FUNCDETAIL_NORMAL || fdresult == FUNCDETAIL_PROCEDURE)
 	{
 		FuncExpr   *funcexpr = makeNode(FuncExpr);
 
@@ -827,6 +853,24 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		transformAggregateCall(pstate, aggref, fargs, agg_order, agg_distinct);
 
 		retval = (Node *) aggref;
+	}
+	else if (fdresult == FUNCDETAIL_MATCH)
+	{
+		/* Match function */
+		MatchFunc *mfunc = makeNode(MatchFunc);
+
+		mfunc->matchfnoid = funcid;
+		mfunc->matchtype = rettype;
+		/* matchcollid and inputcollid will be set by parse_collate.c */
+		mfunc->args = fargs;
+		mfunc->location = location;
+		/* The RPV reference will be set by transformMatchRecognize.
+		 * We don't do it here because we will need to recurse into the tree
+		 * anyway, so might as well do it just once.
+		 */
+
+
+
 	}
 	else
 	{
@@ -1721,7 +1765,7 @@ func_get_detail(List *funcname,
 			case PROKIND_WINDOW:
 				result = FUNCDETAIL_WINDOWFUNC;
 				break;
-			case PROKIND_PROCEDURE
+			case PROKIND_MATCH:
 				result = FUNCDETAIL_MATCH;
 				break;
 			default:
@@ -2550,7 +2594,10 @@ check_srf_call_placement(ParseState *pstate, Node *last_srf, int location)
 		case EXPR_KIND_OTHER:
 			/* Accept SRF here; caller must throw error if wanted */
 			break;
-		case EXPR_KIND_MATCH_RECOGNIZE:
+		case EXPR_KIND_MATCH_RECOGNIZE_DEFINE:
+		case EXPR_KIND_MATCH_RECOGNIZE_MEASURES:
+			/* Only scalar expressions are allowed */
+			err = _("set-returning functions are not allowed in MEASURES or DEFINE clauses");
 			break;
 		case EXPR_KIND_JOIN_ON:
 		case EXPR_KIND_JOIN_USING:
