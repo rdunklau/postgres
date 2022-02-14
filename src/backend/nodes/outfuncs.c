@@ -3839,11 +3839,12 @@ _outRowPattern(StringInfo str, const RowPattern *node)
 	WRITE_NODE_TYPE("ROWPATTERN");
 	WRITE_ENUM_FIELD(kind, RowPatternKind);
 	WRITE_NODE_FIELD(args);
+	WRITE_NODE_FIELD(quantifier);
+	WRITE_BOOL_FIELD(reluctant);
+
 	switch (node->kind)
 	{
 		case ROWPATTERN_QUANTIFIER:
-			WRITE_NODE_FIELD(quantifier);
-			WRITE_BOOL_FIELD(reluctant);
 			break;
 		case ROWPATTERN_ANCHOR:
 			WRITE_ENUM_FIELD(anchor_kind, RowPatternAnchorKind);
@@ -3851,6 +3852,14 @@ _outRowPattern(StringInfo str, const RowPattern *node)
 		default:
 			break;
 	}
+}
+
+static void
+_outRowPatternQuantifier(StringInfo str, const RowPatternQuantifier* node)
+{
+	WRITE_NODE_TYPE("ROWPATTERN_QUANTIFIER");
+	WRITE_NODE_FIELD(lb);
+	WRITE_NODE_FIELD(ub);
 }
 
 /*
@@ -4557,6 +4566,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_RowPattern:
 				_outRowPattern(str, obj);
+				break;
+			case T_RowPatternQuantifier:
+				_outRowPatternQuantifier(str, obj);
 				break;
 			default:
 

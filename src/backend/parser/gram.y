@@ -634,7 +634,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <defelt>		hash_partbound_elem
 
 %type <node> match_recognize match_pattern match_pattern_elem match_skip_clause
-	match_define_elem match_pattern_elem_quantifier
+	  match_define_elem match_pattern_quantifier match_pattern_primary
+    match_pattern_alternation match_pattern_term match_pattern_factor
 %type <list> match_measures_clause match_define measure_list
 %type <ival> match_out_mode
 %type <target> measure_el
@@ -13099,35 +13100,52 @@ match_pattern: /* FIXME do it */
 			}
 		;
 match_pattern_elem:
+      match_pattern_term { $$ = $1; }
+      | match_pattern_alternation { $$ = $1; }
+    ;
+match_pattern_alternation:
+      match_pattern_elem '|' match_pattern_elem {
+				RowPattern*n = makeNode(RowPattern);
+				n->kind = ROWPATTERN_ALTERNATION;
+				n->args = list_make2($1, $3);
+				$$ = (Node *) n;
+      }
+    ;
+
+match_pattern_term:
+      match_pattern_factor  { $$ = $1; }
+      | match_pattern_term match_pattern_factor {
+        RowPattern *n = makeNode(RowPattern);
+				n->kind = ROWPATTERN_CONCATENATION;
+				n->args = list_make2($1, $2);
+				$$ = (Node *) n;
+      }
+    ;
+
+match_pattern_factor:
+      match_pattern_primary { $$ = $1; }
+      | match_pattern_primary match_pattern_quantifier {
+        RowPattern *n = (RowPattern *) $1;
+        RowPattern *q = (RowPattern *) $2;
+        n->quantifier = q->quantifier;
+        n->reluctant = q->reluctant;
+        $$ = (Node *) n;
+      }
+    ;
+
+match_pattern_primary:
 			IDENT  {
 				RowPattern* n = makeNode(RowPattern);
 				n->kind = ROWPATTERN_VARREF;
 				n->args = list_make1(makeString($1));
 				$$ = (Node *) n;
 			}
-			| match_pattern_elem match_pattern_elem %prec PATTERN_CONCATENATION {
-				RowPattern*n = makeNode(RowPattern);
-				n->kind = ROWPATTERN_CONCATENATION;
-				n->args = list_make2($1, $2);
-				$$ = (Node *) n;
-			}
-			| match_pattern_elem '|' match_pattern_elem %prec PATTERN_ALTERNATION {
-				RowPattern*n = makeNode(RowPattern);
-				n->kind = ROWPATTERN_ALTERNATION;
-				n->args = list_make2($1, $3);
-				$$ = (Node *) n;
-			}
-			| '(' match_pattern_elem ')' {
+		  | '(' match_pattern_elem ')' {
 				$$ = $2;
-			}
-			| match_pattern_elem match_pattern_elem_quantifier %prec UMINUS {
-				RowPattern* n = (RowPattern*) $2;
-				n->args = list_make1($1);
-				$$ = (Node *) n;
 			}
 		;
 
-match_pattern_elem_quantifier:
+match_pattern_quantifier:
 			'*' {
 				RowPattern*n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
@@ -13191,7 +13209,7 @@ match_pattern_elem_quantifier:
 				n->reluctant = false;
 				$$ = (Node *) n;
 			}
-			| match_pattern_elem_quantifier '?' {
+			| match_pattern_quantifier '?' {
 				RowPattern *n = (RowPattern *) $1;
 				n->reluctant = true;
 				$$ = (Node *) n;
@@ -13208,7 +13226,7 @@ match_define:
 		;
 match_define_elem:
 			ColId AS a_expr {
-				RowPatternVar *n = makeNode(RowPatternVar);
+				RowPatternVarDef *n = makeNode(RowPatternVarDef);
 				n->name = $1;
 				n->expr = $3;
 				$$ = (Node *) n;
