@@ -42,6 +42,7 @@
 #include "parser/parsetree.h"
 #include "partitioning/partprune.h"
 #include "utils/lsyscache.h"
+#include "utils/rpr_nfa.h"
 
 
 /*
@@ -781,7 +782,7 @@ create_scan_plan(PlannerInfo *root, Path *best_path, int flags)
 			break;
 		case T_MatchRecognizeScan:
 			plan = (Plan *) create_matchrecognizescan_plan(root , (MatchRecognizePath *) best_path,
-				 										   tlist,
+														   tlist,
 														   scan_clauses);
 			break;
 
@@ -4252,12 +4253,30 @@ create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
 {
 	MatchRecognizeScan * scan_plan = makeNode(MatchRecognizeScan);
 	RelOptInfo *rel = best_path->path.parent;
+	MatchRecognize *mr;
+	RangeTblEntry *rte;
 	Plan *subplan;
-	subplan = create_plan(rel->subroot, best_path->subpath);
+	ListCell *lc;
+	rte = planner_rt_fetch(best_path->path.parent->relid, root);
+	mr = rte->matchrecognize;
+	subplan = create_plan_recurse(rel->subroot, best_path->subpath,
+								  CP_LABEL_TLIST | CP_SMALL_TLIST);
+	tlist = build_path_tlist(rel->subroot, &best_path->path);
+
+
 	scan_plan->scan.plan.targetlist = tlist;
 	scan_plan->scan.scanrelid = rel->relid;
 	scan_plan->subplan = subplan;
 	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
+	/* Array starting at 1. */
+	scan_plan->rpvs = palloc(sizeof(Expr*) * (list_length(mr->rowpatternvariables) + 1));
+	scan_plan->rpvs[0] = NULL;
+	foreach(lc, mr->rowpatternvariables)
+	{
+		RowPatternVarDef *rpv = (RowPatternVarDef *) lfirst(lc);
+		scan_plan->rpvs[rpv->varno] = rpv;
+	}
+	scan_plan->nfa = build_nfa_for_matchrecognize(mr->pattern, scan_plan->rpvs);
 	return scan_plan;
 }
 

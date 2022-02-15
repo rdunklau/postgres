@@ -20,6 +20,29 @@
 
 static TupleTableSlot *MatchRecognizeScanNext(MatchRecognizeScanState *node);
 
+struct version_number {
+	int nbparts;
+	int *version_number;
+};
+
+struct versioned_pointer {
+	struct version_number version_number;
+	int computation_state_pointer; /* Read pointer in the computation state tuple store */
+};
+
+struct matchbuffer_tuple {
+	int nbversions;
+};
+
+struct nfa_computation_state {
+	struct version_number vno;
+	int	state_no;
+	int most_recent_tuple; /* ReadPointer in the common shared buffer */
+	Datum *values; /* Array of computed values referenced in define clause */
+	int nbpointers;
+	struct versioned_pointer *versioned_pointers;
+};
+
 static TupleTableSlot *
 MatchRecognizeScanNext(MatchRecognizeScanState *node)
 {
@@ -59,6 +82,7 @@ ExecInitMatchRecognizeScan(MatchRecognizeScan *node, EState *estate, int eflags)
 	scanstate->ss.ps.state = estate;
 	scanstate->ss.ps.ExecProcNode = ExecMatchRecognizeScan;
 	scanstate->subplan = ExecInitNode(node->subplan, estate, eflags);
+
 	ExecInitResultTupleSlotTL(&scanstate->ss.ps, &TTSOpsVirtual);
 	ExecAssignExprContext(estate, &scanstate->ss.ps);
 	return scanstate;

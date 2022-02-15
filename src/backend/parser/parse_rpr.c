@@ -39,8 +39,7 @@ static void transformRowPatternVarDefs(ParseState *pstate,
 										  ParseNamespaceItem *input_ns);
 static ParseNamespaceItem * addRangeTableEntryForRPV(ParseState *pstate,
 													 RowPatternVarDef *var,
-													 ParseNamespaceItem *input_ns,
-													 Index urpv_index);
+													 ParseNamespaceItem *input_ns);
 static ParseNamespaceItem *process_match_recognize_inputrel(ParseState *pstate,
 															MatchRecognizeClause *mrclause,
 															MatchRecognize *mr);
@@ -101,7 +100,6 @@ static Node* rpv_mutator(Node *node, rpv_mutator_context * cxt)
 								   def1->name, def2->name),
 					     parser_errposition(cxt->pstate, var->location)));
 			}
-				
 		}
 		rpv->rpvno = var->varno;
 		rpv->rpvattno = var->varattno;
@@ -151,7 +149,7 @@ static Node* rpv_mutator(Node *node, rpv_mutator_context * cxt)
 
 
 static ParseNamespaceItem *
-addRangeTableEntryForRPV(ParseState *pstate, RowPatternVarDef *rpv, ParseNamespaceItem *input_ns, Index urpv_index)
+addRangeTableEntryForRPV(ParseState *pstate, RowPatternVarDef *rpv, ParseNamespaceItem *input_ns)
 {
 	RangeTblEntry *rte;
 	char *refname = rpv->name;
@@ -160,10 +158,10 @@ addRangeTableEntryForRPV(ParseState *pstate, RowPatternVarDef *rpv, ParseNamespa
 	Index rtindex;
 	Assert(pstate != NULL);
 	/* All universal RPVs are merged to the same RTE */
-	if (rpv->expr == NULL && urpv_index > 0)
+	if (rpv->expr == NULL && list_length(pstate->p_rtable) >= 1)
 	{
-		rte = list_nth(pstate->p_rtable, urpv_index - 1);
-		rtindex = urpv_index;
+		rte = linitial(pstate->p_rtable);
+		rtindex = 1;
 	}
 	else {
 		rte = makeNode(RangeTblEntry);
@@ -208,16 +206,17 @@ transformRowPatternVarDefs(ParseState *pstate, MatchRecognize *mr, ParseNamespac
 	List *rpvs = NIL;
 	ListCell* lc;
 	RowPatternVarDef *rpv;
+	RowPatternVarDef *urpv;
 	ParseNamespaceItem *defaultns;
 
 	/* First add an RTE and an anonymous namespace for the default universal RPV.
 	 * The RTE itself will be reused by other universal RPVs.
 	 */
-	rpv = makeNode(RowPatternVarDef);
-	rpv->name = "";
-	rpv->expr = NULL;
-	rpvs = lappend(rpvs, rpv);
-	defaultns = addRangeTableEntryForRPV(pstate, rpv, input_ns, 0);
+	urpv = makeNode(RowPatternVarDef);
+	urpv->name = "";
+	urpv->expr = NULL;
+	urpv->varno = 1;
+	defaultns = addRangeTableEntryForRPV(pstate, urpv, input_ns);
 	defaultns->p_rel_visible = true;
 	defaultns->p_cols_visible = true;
 	pstate->p_namespace = lappend(pstate->p_namespace, defaultns);
@@ -230,10 +229,12 @@ transformRowPatternVarDefs(ParseState *pstate, MatchRecognize *mr, ParseNamespac
 	 */
 	foreach(lc, mr->rowpatternvariables)
 	{
+		ParseNamespaceItem *item;
 		rpv = lfirst(lc);
 		rpvs = lappend(rpvs, rpv);
-		pstate->p_namespace = lappend(pstate->p_namespace,
-									  addRangeTableEntryForRPV(pstate, rpv, input_ns, defaultns->p_rtindex));
+		item = addRangeTableEntryForRPV(pstate, rpv, input_ns);
+		rpv->varno = item->p_rtindex;
+		pstate->p_namespace = lappend(pstate->p_namespace, item);
 	}
 
 	/* Now that the proper namespaces have been set up, we can transform them.

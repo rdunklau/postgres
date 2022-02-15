@@ -352,8 +352,8 @@ dot_dot			\.\.
 colon_equals	":="
 
 /* lbrace, rbrace are assigned token names to play nice with ECPG */
-lbrace {
-rbrace }
+lbrace		\{
+rbrace		\}
 
 /*
  * These operator-like tokens (unlike the above ones) also match the {operator}
@@ -863,6 +863,15 @@ other			.
 {self}			{
 					SET_YYLLOC();
 					return yytext[0];
+				}
+{lbrace}		{
+					SET_YYLLOC();
+					return LBRACE;
+				}
+
+{rbrace}		{
+					SET_YYLLOC();
+					return RBRACE;
 				}
 
 {operator}		{

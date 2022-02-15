@@ -977,6 +977,9 @@ typedef struct MatchRecognizeScan
 {
 	Scan	scan;
 	Plan	*subplan;
+	int		numrpvs;
+	RowPatternVarDef **rpvs;
+	void	*nfa;
 } MatchRecognizeScan;
 
 /* ----------------

@@ -1651,10 +1651,14 @@ typedef enum RowPatternAnchorKind
 	ROWPATTERNANCHOR_END
 } RowPatternAnchorKind;
 
+#define ROWPATTERN_QUANTIFIER_INF -1
+
 typedef struct RowPatternQuantifier
 {
-	Node	*lb;
-	Node	*ub;
+	NodeTag type;
+	int		lb;
+	int		ub;
+	bool	reluctant;
 } RowPatternQuantifier;
 
 typedef struct RowPatternVarDef
@@ -1662,6 +1666,7 @@ typedef struct RowPatternVarDef
 	NodeTag type;
 	char *name;
 	Node *expr; /* NULL for the universal row pattern variable */
+	Index varno; /* varno for this definition */
 } RowPatternVarDef;
 
 
@@ -1678,7 +1683,7 @@ typedef struct RowPattern
 
 	/* For quantifier */
 	RowPatternQuantifier *quantifier;
-	bool		reluctant;
+	int location;
 } RowPattern;
 
 typedef struct RowPatternVar

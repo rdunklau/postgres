@@ -1839,7 +1839,7 @@ typedef struct MatchRecognizePath
 {
 	Path		path;
 	Path		*subpath;
-	/* TODO: add match recognize useful info */
+	MatchRecognize *mr;
 } MatchRecognizePath;
 
 /*

@@ -96,6 +96,7 @@ typedef enum NodeTag
 	T_PartitionPruneStepOp,
 	T_PartitionPruneStepCombine,
 	T_PlanInvalItem,
+	T_MatchRecognizeNFA,
 
 	/*
 	 * TAGS FOR PLAN STATE NODES (execnodes.h)

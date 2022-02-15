@@ -798,6 +798,7 @@ exprCollation(const Node *expr)
 			break;
 		case T_MatchFunc:
 			coll = ((const MatchFunc *) expr)->matchcollid;
+			break;
 		case T_SubscriptingRef:
 			coll = ((const SubscriptingRef *) expr)->refcollid;
 			break;
@@ -1003,6 +1004,7 @@ exprInputCollation(const Node *expr)
 			break;
 		case T_MatchFunc:
 			coll = ((const MatchFunc *) expr)->inputcollid;
+			break;
 		case T_FuncExpr:
 			coll = ((const FuncExpr *) expr)->inputcollid;
 			break;
@@ -1063,6 +1065,7 @@ exprSetCollation(Node *expr, Oid collation)
 			break;
 		case T_MatchFunc:
 			((MatchFunc *) expr)->matchcollid = collation;
+			break;
 		case T_SubscriptingRef:
 			((SubscriptingRef *) expr)->refcollid = collation;
 			break;
@@ -1217,6 +1220,7 @@ exprSetInputCollation(Node *expr, Oid inputcollation)
 			break;
 		case T_MatchFunc:
 			((WindowFunc *) expr)->inputcollid = inputcollation;
+			break;
 		case T_FuncExpr:
 			((FuncExpr *) expr)->inputcollid = inputcollation;
 			break;

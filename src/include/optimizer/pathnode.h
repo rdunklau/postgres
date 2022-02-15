@@ -113,8 +113,9 @@ extern Path *create_tablefuncscan_path(PlannerInfo *root, RelOptInfo *rel,
 									   Relids required_outer);
 extern Path *create_ctescan_path(PlannerInfo *root, RelOptInfo *rel,
 								 Relids required_outer);
-extern MatchRecognizePath *create_matchrecognize_path(PlannerInfo *root, RelOptInfo *rel,
-								 		Path *subpath, List* pathkeys);
+extern MatchRecognizePath *create_matchrecognize_path(PlannerInfo *root,
+													  RelOptInfo *rel,
+			   								 		Path *subpath, List* pathkeys);
 extern Path *create_namedtuplestorescan_path(PlannerInfo *root, RelOptInfo *rel,
 											 Relids required_outer);
 extern Path *create_resultscan_path(PlannerInfo *root, RelOptInfo *rel,

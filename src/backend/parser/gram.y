@@ -656,6 +656,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %token <ival>	ICONST PARAM
 %token			TYPECAST DOT_DOT COLON_EQUALS EQUALS_GREATER
 %token			LESS_EQUALS GREATER_EQUALS NOT_EQUALS
+%token			LBRACE RBRACE
 
 /*
  * If you want to make any keyword changes, update the keyword table in
@@ -784,7 +785,6 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %token		MODE_PLPGSQL_ASSIGN2
 %token		MODE_PLPGSQL_ASSIGN3
 
-
 /* Precedence: lowest to highest */
 %nonassoc	SET				/* see relation_expr_opt_alias */
 %left		UNION EXCEPT
@@ -846,7 +846,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %left		COLLATE
 %right		UMINUS
 %left		'[' ']'
-%left		lbrace rbrace
+%left		LBRACE RBRACE
 %right	'?'
 %left		'(' ')'
 %left		TYPECAST
@@ -13096,6 +13096,7 @@ match_pattern: /* FIXME do it */
 			| PATTERN '(' ')' %prec PATTERN {
 				RowPattern * n = makeNode(RowPattern);
 				n->kind = ROWPATTERN_EMPTY;
+				n->location = @1;
 				$$ = (Node *) n;
 			}
 		;
@@ -13108,6 +13109,7 @@ match_pattern_alternation:
 				RowPattern*n = makeNode(RowPattern);
 				n->kind = ROWPATTERN_ALTERNATION;
 				n->args = list_make2($1, $3);
+				n->location = @1;
 				$$ = (Node *) n;
       }
     ;
@@ -13115,9 +13117,10 @@ match_pattern_alternation:
 match_pattern_term:
       match_pattern_factor  { $$ = $1; }
       | match_pattern_term match_pattern_factor {
-        RowPattern *n = makeNode(RowPattern);
+				RowPattern *n = makeNode(RowPattern);
 				n->kind = ROWPATTERN_CONCATENATION;
 				n->args = list_make2($1, $2);
+				n->location = @1;
 				$$ = (Node *) n;
       }
     ;
@@ -13128,7 +13131,7 @@ match_pattern_factor:
         RowPattern *n = (RowPattern *) $1;
         RowPattern *q = (RowPattern *) $2;
         n->quantifier = q->quantifier;
-        n->reluctant = q->reluctant;
+		n->location = @1;
         $$ = (Node *) n;
       }
     ;
@@ -13138,6 +13141,7 @@ match_pattern_primary:
 				RowPattern* n = makeNode(RowPattern);
 				n->kind = ROWPATTERN_VARREF;
 				n->args = list_make1(makeString($1));
+				n->location = @1;
 				$$ = (Node *) n;
 			}
 		  | '(' match_pattern_elem ')' {
@@ -13150,68 +13154,68 @@ match_pattern_quantifier:
 				RowPattern*n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = (Node*) makeInteger(0);
-				n->quantifier->ub = NULL;
-				n->reluctant = false;
+				n->quantifier->lb = 0;
+				n->quantifier->ub = ROWPATTERN_QUANTIFIER_INF;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| '+' {
 				RowPattern *n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = (Node*) makeInteger(1);
-				n->quantifier->ub = NULL;
-				n->reluctant = false;
+				n->quantifier->lb = 1;
+				n->quantifier->ub = ROWPATTERN_QUANTIFIER_INF;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| '?' {
 				RowPattern *n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = (Node*) makeInteger(0);
-				n->quantifier->ub = (Node*) makeInteger(1);
-				n->reluctant = false;
+				n->quantifier->lb = 0;
+				n->quantifier->ub = 1;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
-			| lbrace Iconst rbrace {
+			| LBRACE Iconst RBRACE {
 				RowPattern *n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = (Node*) makeInteger($2);
-				n->quantifier->ub = (Node*) makeInteger($2);
-				n->reluctant = false;
+				n->quantifier->lb = $2;
+				n->quantifier->ub = $2;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
-			| lbrace Iconst ',' rbrace {
+			| LBRACE Iconst ',' RBRACE {
 				RowPattern *n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = (Node*) makeInteger($2);
-				n->quantifier->ub = NULL;
-				n->reluctant = false;
+				n->quantifier->lb = $2;
+				n->quantifier->ub = ROWPATTERN_QUANTIFIER_INF;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
-			| lbrace Iconst ',' Iconst rbrace {
+			| LBRACE Iconst ',' Iconst RBRACE {
 				RowPattern *n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = (Node*) makeInteger($2);
-				n->quantifier->ub = (Node*) makeInteger($4);
-				n->reluctant = false;
+				n->quantifier->lb = $2;
+				n->quantifier->ub = $4;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
-			| lbrace ',' Iconst rbrace {
+			| LBRACE ',' Iconst RBRACE {
 				RowPattern *n = makeNode(RowPattern);
 				n->quantifier = makeNode(RowPatternQuantifier);
 				n->kind = ROWPATTERN_QUANTIFIER;
-				n->quantifier->lb = NULL;
-				n->quantifier->ub = (Node*) makeInteger($3);
-				n->reluctant = false;
+				n->quantifier->lb = 0;
+				n->quantifier->ub = $3;
+				n->quantifier->reluctant = false;
 				$$ = (Node *) n;
 			}
 			| match_pattern_quantifier '?' {
 				RowPattern *n = (RowPattern *) $1;
-				n->reluctant = true;
+				n->quantifier->reluctant = true;
 				$$ = (Node *) n;
 			}
 		;
@@ -16586,7 +16590,7 @@ bare_label_keyword:
 			| EXTRACT
 			| FALSE_P
 			| FAMILY
-      | FINAL
+			| FINAL
 			| FINALIZE
 			| FIRST_P
 			| FLOAT_P
@@ -16767,7 +16771,7 @@ bare_label_keyword:
 			| ROW
 			| ROWS
 			| RULE
-      | RUNNING
+			| RUNNING
 			| SAVEPOINT
 			| SCHEMA
 			| SCHEMAS
