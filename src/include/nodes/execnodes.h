@@ -2446,12 +2446,34 @@ typedef struct WindowAggState
 	TupleTableSlot *temp_slot_2;
 } WindowAggState;
 
+
 typedef struct MatchRecognizeScanState
 {
 	ScanState ss;
 	PlanState *subplan;
 
 	int	num_rpvs;
+	Expr *rpvs;		/* RPV definitions */
+
+	struct rpr_nfa*	nfa;	/* NFA */
+
+	ExprState  *partEqfunction; /* equality funcs for partition columns */
+
+	List *runs;	/* List of all current run objects */
+
+	bool	partition_spooled;
+	bool	more_partitions;
+
+	Tuplestorestate	*partitionbuffer; /* Tuplestore of current partition */
+	int current_ptr; 				 /* Pointer to current partition row */
+	int64	spooled_rows;
+	int64	currentpos;
+	Tuplestorestate	*matchbuffer;	 /* Shared buffer for all runs */
+	Tuplestorestate	*version_info;	 /* Tuplestore for storing versioning info */
+
+	TupleTableSlot	*first_part_slot; /* first tuple of current or next partition */
+
+	MemoryContext partcontext;	/* context for partition-lifespan data */
 
 } MatchRecognizeScanState;
 

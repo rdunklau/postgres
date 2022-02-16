@@ -47,7 +47,7 @@ begin
   loop
     hash_node := find_hash(json_extract_path(whole_plan, '0', 'Plan'));
     original := hash_node->>'Original Hash Batches';
-    final := hash_node->>'Hash Batches';
+    "final" := hash_node->>'Hash Batches';
     return next;
   end loop;
 end;
@@ -98,7 +98,7 @@ set local work_mem = '4MB';
 explain (costs off)
   select count(*) from simple r join simple s using (id);
 select count(*) from simple r join simple s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
@@ -113,7 +113,7 @@ set local enable_parallel_hash = off;
 explain (costs off)
   select count(*) from simple r join simple s using (id);
 select count(*) from simple r join simple s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
@@ -128,7 +128,7 @@ set local enable_parallel_hash = on;
 explain (costs off)
   select count(*) from simple r join simple s using (id);
 select count(*) from simple r join simple s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
@@ -146,7 +146,7 @@ set local work_mem = '128kB';
 explain (costs off)
   select count(*) from simple r join simple s using (id);
 select count(*) from simple r join simple s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
@@ -161,7 +161,7 @@ set local enable_parallel_hash = off;
 explain (costs off)
   select count(*) from simple r join simple s using (id);
 select count(*) from simple r join simple s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
@@ -176,7 +176,7 @@ set local enable_parallel_hash = on;
 explain (costs off)
   select count(*) from simple r join simple s using (id);
 select count(*) from simple r join simple s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join simple s using (id);
@@ -195,7 +195,7 @@ set local work_mem = '128kB';
 explain (costs off)
   select count(*) FROM simple r JOIN bigger_than_it_looks s USING (id);
 select count(*) FROM simple r JOIN bigger_than_it_looks s USING (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) FROM simple r JOIN bigger_than_it_looks s USING (id);
@@ -210,7 +210,7 @@ set local enable_parallel_hash = off;
 explain (costs off)
   select count(*) from simple r join bigger_than_it_looks s using (id);
 select count(*) from simple r join bigger_than_it_looks s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join bigger_than_it_looks s using (id);
@@ -225,7 +225,7 @@ set local enable_parallel_hash = on;
 explain (costs off)
   select count(*) from simple r join bigger_than_it_looks s using (id);
 select count(*) from simple r join bigger_than_it_looks s using (id);
-select original > 1 as initially_multibatch, final > original as increased_batches
+select original > 1 as initially_multibatch, "final" > original as increased_batches
   from hash_join_batches(
 $$
   select count(*) from simple r join bigger_than_it_looks s using (id);
@@ -318,7 +318,7 @@ explain (costs off)
 select count(*) from join_foo
   left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
   on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
-select final > 1 as multibatch
+select "final" > 1 as multibatch
   from hash_join_batches(
 $$
   select count(*) from join_foo
@@ -345,7 +345,7 @@ explain (costs off)
 select count(*) from join_foo
   left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
   on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
-select final > 1 as multibatch
+select "final" > 1 as multibatch
   from hash_join_batches(
 $$
   select count(*) from join_foo
@@ -372,7 +372,7 @@ explain (costs off)
 select count(*) from join_foo
   left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
   on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
-select final > 1 as multibatch
+select "final" > 1 as multibatch
   from hash_join_batches(
 $$
   select count(*) from join_foo
@@ -399,7 +399,7 @@ explain (costs off)
 select count(*) from join_foo
   left join (select b1.id, b1.t from join_bar b1 join join_bar b2 using (id)) ss
   on join_foo.id < ss.id + 1 and join_foo.id > ss.id - 1;
-select final > 1 as multibatch
+select "final" > 1 as multibatch
   from hash_join_batches(
 $$
   select count(*) from join_foo
@@ -459,7 +459,7 @@ explain (costs off)
   from wide left join (select id, coalesce(t, '') || '' as t from wide) s using (id);
 select length(max(s.t))
 from wide left join (select id, coalesce(t, '') || '' as t from wide) s using (id);
-select final > 1 as multibatch
+select "final" > 1 as multibatch
   from hash_join_batches(
 $$
   select length(max(s.t))

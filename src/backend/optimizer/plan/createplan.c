@@ -4257,8 +4257,14 @@ create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
 	RangeTblEntry *rte;
 	Plan *subplan;
 	ListCell *lc;
+	int numPart;
+	int partNumCols;
+	AttrNumber *partColIdx;
+	Oid 	   *partOperators;
+	Oid		   *partCollations;
 	rte = planner_rt_fetch(best_path->path.parent->relid, root);
 	mr = rte->matchrecognize;
+	numPart = list_length(mr->partitionClause);
 	subplan = create_plan_recurse(rel->subroot, best_path->subpath,
 								  CP_LABEL_TLIST | CP_SMALL_TLIST);
 	tlist = build_path_tlist(rel->subroot, &best_path->path);
@@ -4267,8 +4273,8 @@ create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
 	scan_plan->scan.plan.targetlist = tlist;
 	scan_plan->scan.scanrelid = rel->relid;
 	scan_plan->subplan = subplan;
-	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
-	/* Array starting at 1. */
+
+	/* Fill the RPV array */
 	scan_plan->rpvs = palloc(sizeof(Expr*) * (list_length(mr->rowpatternvariables) + 1));
 	scan_plan->rpvs[0] = NULL;
 	foreach(lc, mr->rowpatternvariables)
@@ -4276,7 +4282,36 @@ create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
 		RowPatternVarDef *rpv = (RowPatternVarDef *) lfirst(lc);
 		scan_plan->rpvs[rpv->varno] = rpv;
 	}
+
+	/* 
+	 * Convert SortGroupClauses for the partition into arrays of indexes and
+	 * equality operators.
+	 * The executor needs it to detect partitions boundaries.
+	 */
+	partColIdx = (AttrNumber *) palloc(sizeof(AttrNumber) * numPart);
+	partOperators = (Oid *) palloc(sizeof(Oid) * numPart);
+	partCollations = (Oid *) palloc(sizeof(Oid) * numPart);
+	partNumCols = 0;
+	foreach(lc, mr->partitionClause)
+	{
+		SortGroupClause *sgc = (SortGroupClause *) lfirst(lc);
+		TargetEntry *tle = get_sortgroupclause_tle(sgc, subplan->targetlist);
+		Assert(OidIsValid(sgc->eqop));
+		partColIdx[partNumCols] = tle->resno;
+		partOperators[partNumCols] = sgc->eqop;
+		partCollations[partNumCols] = exprCollation((Node *) tle->expr);
+	}
+
+	scan_plan->partNumCols = partNumCols;
+	scan_plan->partColIdx = partColIdx;
+	scan_plan->partOperators = partOperators;
+	scan_plan->partCollations = partCollations;
+
+	/* Finally, build the NFA. */
 	scan_plan->nfa = build_nfa_for_matchrecognize(mr->pattern, scan_plan->rpvs);
+	
+	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
+	
 	return scan_plan;
 }
 

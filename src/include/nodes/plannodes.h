@@ -978,6 +978,12 @@ typedef struct MatchRecognizeScan
 	Scan	scan;
 	Plan	*subplan;
 	int		numrpvs;
+
+	int			partNumCols;	/* number of columns in partition clause */
+	AttrNumber *partColIdx;		/* their indexes in the input target list */
+	Oid		   *partOperators;	/* equality operators for partition columns */
+	Oid		   *partCollations; /* collations for partition columns */
+
 	RowPatternVarDef **rpvs;
 	void	*nfa;
 } MatchRecognizeScan;
