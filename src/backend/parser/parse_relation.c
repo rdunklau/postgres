@@ -2678,7 +2678,6 @@ expandRTE(RangeTblEntry *rte, int rtindex, int sublevels_up,
 						   include_dropped, colnames, colvars);
 			break;
 		case RTE_SUBQUERY:
-		case RTE_MATCH_RECOGNIZE:
 			{
 				/* Subquery or match recognize RTE */
 				ListCell   *aliasp_item = list_head(rte->eref->colnames);

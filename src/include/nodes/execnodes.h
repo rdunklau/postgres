@@ -269,7 +269,7 @@ typedef struct ExprContext
 	/* For expressions in match_recognize nodes, we have as many tuple slots as we have
 	 * rpvs: Their varnos are interpreted as a position in this array.
 	 */
-	TupleTableSlot ** ecxt_rpv_slots;
+	TupleTableSlot **ecxt_rpv_slots;
 
 	/* Functions to call back when ExprContext is shut down or rescanned */
 	ExprContext_CB *ecxt_callbacks;
@@ -2447,6 +2447,9 @@ typedef struct WindowAggState
 } WindowAggState;
 
 
+/* Avoid incuding partitionbuffer.h here */
+typedef struct PartitionBufferData *PartitionBuffer;
+
 typedef struct MatchRecognizeScanState
 {
 	ScanState ss;
@@ -2455,26 +2458,17 @@ typedef struct MatchRecognizeScanState
 	int	num_rpvs;
 	Expr *rpvs;		/* RPV definitions */
 
+	TupleTableSlot *matchslot;
+
 	struct rpr_nfa*	nfa;	/* NFA */
 
-	ExprState  *partEqfunction; /* equality funcs for partition columns */
+	PartitionBuffer	partitionbuffer;	/* Partition buffer for reading input tuples */
+	int64	currentpos; /* position of current row in partition */
 
 	List *runs;	/* List of all current run objects */
 
-	bool	partition_spooled;
-	bool	more_partitions;
-
-	Tuplestorestate	*partitionbuffer; /* Tuplestore of current partition */
-	int current_ptr; 				 /* Pointer to current partition row */
-	int64	spooled_rows;
-	int64	currentpos;
 	Tuplestorestate	*matchbuffer;	 /* Shared buffer for all runs */
 	Tuplestorestate	*version_info;	 /* Tuplestore for storing versioning info */
-
-	TupleTableSlot	*first_part_slot; /* first tuple of current or next partition */
-
-	MemoryContext partcontext;	/* context for partition-lifespan data */
-
 } MatchRecognizeScanState;
 
 /* ----------------

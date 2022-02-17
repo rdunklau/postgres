@@ -3865,11 +3865,25 @@ _outRowPatternQuantifier(StringInfo str, const RowPatternQuantifier *node)
 static void
 _outRowPatternVarDef(StringInfo str, const RowPatternVarDef *node)
 {
-	WRITE_NODE_TYPE("ROWPATTERN_VARDEF");
+	WRITE_NODE_TYPE("ROWPATTERNVAR");
 	WRITE_STRING_FIELD(name);
 	WRITE_NODE_FIELD(expr);
 	WRITE_INT_FIELD(varno);
 }
+
+static void
+_outRowPatternVar(StringInfo str, const RowPatternVar *node)
+{
+	WRITE_NODE_TYPE("ROWPATTERN_VARDEF");
+	WRITE_INT_FIELD(rpvno);
+	WRITE_INT_FIELD(rpvattno);
+	WRITE_OID_FIELD(rpvtype);
+	WRITE_INT_FIELD(rpvtypmod);
+	WRITE_OID_FIELD(rpvcollid);
+	WRITE_LOCATION_FIELD(location);
+
+}
+
 
 /*
  * outNode -
@@ -4581,6 +4595,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_RowPatternVarDef:
 				_outRowPatternVarDef(str, obj);
+				break;
+			case T_RowPatternVar:
+				_outRowPatternVar(str, obj);
 				break;
 			default:
 

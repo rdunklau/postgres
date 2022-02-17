@@ -943,7 +943,7 @@ ParseFuncOrColumn(ParseState *pstate, List *funcname, List *fargs,
 		wfunc->args = fargs;
 		/* winref will be set by transformWindowFuncCall */
 		wfunc->winstar = agg_star;
-		wfunc->winagg = (fdresult == FUNCDETAIL_AGGREGATE && !is_matchrecognize);
+		wfunc->winagg = (fdresult == FUNCDETAIL_AGGREGATE);
 		wfunc->aggfilter = agg_filter;
 		wfunc->location = location;
 

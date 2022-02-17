@@ -21,8 +21,6 @@
  *		version information. (FIXME: add an optimization when there is only one
  *		to bypass the version_info, by instead storing a read pointer to the
  *		matchbuffer directly).
- *		- if 
- *		
  *
  *
  * Portions Copyright (c) 1996-2022, PostgreSQL Global Development Group
@@ -38,10 +36,9 @@
 
 #include "executor/execdebug.h"
 #include "executor/nodeMatchrecognizescan.h"
+#include "executor/partitionbuffer.h"
 #include "miscadmin.h"
 
-
-static TupleTableSlot *MatchRecognizeScanNext(MatchRecognizeScanState *node);
 
 struct version_number {
 	int nbparts;
@@ -69,40 +66,63 @@ struct nfa_computation_state {
 	struct versioned_pointer *next;
 };
 
-static TupleTableSlot *
-MatchRecognizeScanNext(MatchRecognizeScanState *node)
-{
-	TupleTableSlot *slot;
-	slot = ExecProcNode(node->subplan);
-	return slot;
-}
-
-
-static bool
-MatchRecognizeScanRecheck(SubqueryScanState *node, TupleTableSlot *slot)
-{
-	return true;
-}
-
 static TupleTableSlot * ExecMatchRecognizeScan(PlanState *pstate)
 {
 	MatchRecognizeScanState *matchstate = castNode(MatchRecognizeScanState, pstate);
-
-	if (matchstate->partitionbuffer == NULL)
-	{
-		/* Initialize first partition */
-		// begin_partition(matchstate);
-	}
-	else
-	{
-		matchstate->currentpos++;
-	}
+	ExprContext *econtext;
+	Tuplestorestate *tupstore;
 
 	CHECK_FOR_INTERRUPTS();
 
-	return ExecScan(&matchstate->ss,
-					(ExecScanAccessMtd) MatchRecognizeScanNext,
-					(ExecScanRecheckMtd) MatchRecognizeScanRecheck);
+	if (!partitionbuffer_isready(matchstate->partitionbuffer))
+	{
+		/* Initialize first partition */
+		prepare_partition(matchstate->partitionbuffer, matchstate->subplan);
+		/* Setup any read pointers we might need */
+		matchstate->currentpos = 0;
+		/* Start the partition */
+		start_partition(matchstate->partitionbuffer);
+	} else {
+		matchstate->currentpos++;
+	}
+
+	/* Spool tuples. If we need to, move the next partition. */
+	switch(spool_tuples(matchstate->partitionbuffer,
+						matchstate->subplan,
+						matchstate->currentpos))
+	{
+			case SPOOL_INPUT_END:
+				return NULL;
+			case SPOOL_PARTITION_END:
+				matchstate->currentpos = 0;
+				release_partition(matchstate->partitionbuffer);
+				prepare_partition(matchstate->partitionbuffer, matchstate->subplan);
+				start_partition(matchstate->partitionbuffer);
+				break;
+			default:
+				break;
+	}
+
+
+
+	/* Final output execution is in ps_ExprContext */
+	econtext = matchstate->ss.ps.ps_ExprContext;
+
+	/* Clear it for current row */
+	ResetExprContext(econtext);
+
+	/* Fetch the current tuple from the underlying buffer */
+	tupstore = partitionbuffer_tuplestore(matchstate->partitionbuffer);
+	tuplestore_gettupleslot(tupstore, true, true, matchstate->ss.ss_ScanTupleSlot);
+	print_slot(matchstate->ss.ss_ScanTupleSlot);
+
+	/* Return a projection tuple using the windowfunc and matchfunc results and
+	 * the current row.
+	 */
+	econtext->ecxt_outertuple = matchstate->ss.ss_ScanTupleSlot;
+	econtext->ecxt_scantuple = matchstate->ss.ss_ScanTupleSlot;
+
+	return ExecProject(matchstate->ss.ps.ps_ProjInfo);
 }
 
 
@@ -110,7 +130,7 @@ MatchRecognizeScanState *
 ExecInitMatchRecognizeScan(MatchRecognizeScan *node, EState *estate, int eflags)
 {
 	MatchRecognizeScanState *matchstate;
-	TupleDesc	scanDesc;
+	TupleDesc intermediataTupDesc = ExecTypeFromTL(node->measures_list);
 	Assert(!(eflags & (EXEC_FLAG_BACKWARD | EXEC_FLAG_MARK)));
 	Assert(outerPlan(node) == NULL);
 	Assert(innerPlan(node) == NULL);
@@ -119,51 +139,54 @@ ExecInitMatchRecognizeScan(MatchRecognizeScan *node, EState *estate, int eflags)
 	matchstate->ss.ps.plan = (Plan *) node;
 	matchstate->ss.ps.state = estate;
 	matchstate->ss.ps.ExecProcNode = ExecMatchRecognizeScan;
-	matchstate->subplan = ExecInitNode(node->subplan, estate, eflags);
-	ExecCreateScanSlotFromOuterPlan(estate, &matchstate->ss, &TTSOpsMinimalTuple);
-
 
 	ExecAssignExprContext(estate, &matchstate->ss.ps);
 
-	/* Similarly to WindowAgg, initialize a partition context */
-	matchstate->partcontext =
-		AllocSetContextCreate(CurrentMemoryContext, "MatchRecognize Partition",
-							  ALLOCSET_DEFAULT_SIZES);
+	matchstate->subplan = ExecInitNode(node->subplan, estate, eflags);
+	ExecInitScanTupleSlot(estate, &matchstate->ss,
+						  ExecGetResultType(matchstate->subplan),
+						  &TTSOpsMinimalTuple);
+
+	matchstate->ss.ps.scanopsset = true;
+	matchstate->ss.ps.scanops = ExecGetResultSlotOps(matchstate->subplan,
+													 &matchstate->ss.ps.scanopsfixed);
 
 	matchstate->ss.ps.outeropsset = true;
 	matchstate->ss.ps.outerops = &TTSOpsMinimalTuple;
 	matchstate->ss.ps.outeropsfixed = true;
 
-	matchstate->first_part_slot = ExecInitExtraTupleSlot(estate, scanDesc,
-													   &TTSOpsMinimalTuple);
 
+	matchstate->partitionbuffer = (PartitionBuffer) make_partition_buffer(estate,
+														&matchstate->ss,
+														node->partNumCols,
+														node->partColIdx,
+														node->partOperators,
+														node->partCollations);
 
-	ExecInitResultTupleSlotTL(&matchstate->ss.ps, &TTSOpsVirtual);
-	/* We don't project anything (yet) */
-	ExecAssignProjectionInfo(&matchstate->ss.ps, NULL);
-	scanDesc = matchstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
+	/* We need an intermediate slot for the match results, before the final
+	 * projection. */
+	matchstate->matchslot = ExecInitExtraTupleSlot(estate, intermediataTupDesc,
+												   &TTSOpsMinimalTuple);
+	
 
-	/* If we have a partition clause, set up data fro comparing tuples */
-	matchstate->partEqfunction = execTuplesMatchPrepare(scanDesc,
-													   node->partNumCols,
-													   node->partColIdx,
-													   node->partOperators,
-													   node->partCollations,
-													   &matchstate->ss.ps);
+	matchstate->ss.ps.ps_ResultTupleDesc = intermediataTupDesc;
+	ExecInitResultSlot(&matchstate->ss.ps, &TTSOpsMinimalTuple);
 
-	matchstate->first_part_slot =ExecInitExtraTupleSlot(estate, scanDesc,
-														&TTSOpsMinimalTuple);
+	matchstate->ss.ps.ps_ProjInfo = ExecBuildProjectionInfo(node->measures_list,
+													 matchstate->ss.ps.ps_ExprContext,
+													 matchstate->ss.ps.ps_ResultTupleSlot,
+													 &matchstate->ss.ps,
+													 NULL);
 
-	matchstate->partition_spooled = false;
-	matchstate->more_partitions = false;
 	return matchstate;
-
 }
 
 
 void
 ExecEndMatchRecognizeScan(MatchRecognizeScanState *node)
 {
+	free_partitionbuffer(node->partitionbuffer);
 	ExecFreeExprContext(&node->ss.ps);
-	ExecEndNode(outerPlanState(node));
+	ExecClearTuple(node->ss.ss_ScanTupleSlot);
+	ExecEndNode(node->subplan);
 }

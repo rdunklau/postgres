@@ -76,6 +76,7 @@ OBJS = \
 	nodeValuesscan.o \
 	nodeWindowAgg.o \
 	nodeWorktablescan.o \
+	partitionbuffer.o \
 	spi.o \
 	tqueue.o \
 	tstoreReceiver.o

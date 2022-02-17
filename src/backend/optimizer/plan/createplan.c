@@ -4260,15 +4260,13 @@ create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
 	int numPart;
 	int partNumCols;
 	AttrNumber *partColIdx;
-	Oid 	   *partOperators;
+	Oid		   *partOperators;
 	Oid		   *partCollations;
 	rte = planner_rt_fetch(best_path->path.parent->relid, root);
 	mr = rte->matchrecognize;
 	numPart = list_length(mr->partitionClause);
 	subplan = create_plan_recurse(rel->subroot, best_path->subpath,
 								  CP_LABEL_TLIST | CP_SMALL_TLIST);
-	tlist = build_path_tlist(rel->subroot, &best_path->path);
-
 
 	scan_plan->scan.plan.targetlist = tlist;
 	scan_plan->scan.scanrelid = rel->relid;
@@ -4307,11 +4305,24 @@ create_matchrecognizescan_plan(PlannerInfo *root, MatchRecognizePath *best_path,
 	scan_plan->partOperators = partOperators;
 	scan_plan->partCollations = partCollations;
 
+	/* Now build the list of columns we actually need. */
+	scan_plan->measures_list = NIL;
+	foreach(lc, tlist)
+	{
+		TargetEntry *tle = lfirst(lc);
+		Var * var;
+		/* We should have only vars here */
+		Assert(IsA(tle->expr, Var));
+		var = (Var *) tle->expr;
+		scan_plan->measures_list = lappend(scan_plan->measures_list,
+										   list_nth(mr->targetList, var->varattno - 1));
+	}
+
 	/* Finally, build the NFA. */
 	scan_plan->nfa = build_nfa_for_matchrecognize(mr->pattern, scan_plan->rpvs);
-	
+
 	copy_generic_path_info(&scan_plan->scan.plan, &best_path->path);
-	
+
 	return scan_plan;
 }
 

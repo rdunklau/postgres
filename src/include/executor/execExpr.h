@@ -617,6 +617,16 @@ typedef struct ExprEvalStep
 			WindowFuncExprState *wfstate;
 		}			window_func;
 
+		/* for EEOP_RPVAR */
+		struct
+		{
+			/* attnum is attr number - 1 like a regular  
+			/* but it's just the normal (negative) attr number for SYSVAR */
+			int			rpvno;
+			int			attnum;
+			Oid			vartype;	/* type OID of variable */
+		}	rpv;
+
 		/* for EEOP_SUBPLAN */
 		struct
 		{
