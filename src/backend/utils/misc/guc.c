@@ -6739,6 +6739,7 @@ call_string_check_hook(struct config_string *conf, char **newval, void **extra,
 	return result;
 }
 
+
 static bool
 call_enum_check_hook(struct config_enum *conf, int *newval, void **extra,
 					 GucSource source, int elevel)

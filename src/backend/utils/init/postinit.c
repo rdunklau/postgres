@@ -808,6 +808,12 @@ InitPostgres(const char *in_dbname, Oid dboid,
 	InitCatalogCache();
 	InitPlanCache();
 
+	/* Adjust malloc options if needed.
+	 * This is done here because the implementation can vary depending on the
+	 * type of backend.
+	 */
+	MallocAdjustSettings();
+
 	/* Initialize portal manager */
 	EnablePortalManager();
 
@@ -1215,6 +1221,9 @@ InitPostgres(const char *in_dbname, Oid dboid,
 	 */
 	if (load_session_libraries)
 		process_session_preload_libraries();
+
+	/* Tune malloc options according to what we've read */
+	/* MallocTuneHook(); */ 
 
 	/* report this backend in the PgBackendStatus array */
 	if (!bootstrap)
