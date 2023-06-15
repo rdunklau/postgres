@@ -41,6 +41,7 @@
 #include "utils/memutils.h"
 #include "utils/memutils_memorychunk.h"
 #include "utils/memutils_internal.h"
+#include "pg_trace.h"
 
 
 #define Generation_BLOCKHDRSZ	MAXALIGN(sizeof(GenerationBlock))
@@ -260,6 +261,7 @@ GenerationContextCreate(MemoryContext parent,
 
 	((MemoryContext) set)->mem_allocated = firstBlockSize;
 
+	TRACE_POSTGRESQL_GENERATION_ALLOC_CREATE();
 	return (MemoryContext) set;
 }
 
@@ -320,6 +322,7 @@ GenerationDelete(MemoryContext context)
 {
 	/* Reset to release all releasable GenerationBlocks */
 	GenerationReset(context);
+	TRACE_POSTGRESQL_GENERATION_ALLOC_DESTROY();
 	/* And free the context header and keeper block */
 	free(context);
 }
@@ -362,6 +365,7 @@ GenerationAlloc(MemoryContext context, Size size)
 		Size		blksize = required_size + Generation_BLOCKHDRSZ;
 
 		block = (GenerationBlock *) malloc(blksize);
+		TRACE_POSTGRESQL_GENERATION_ALLOC_MALLOC(blksize);
 		if (block == NULL)
 			return NULL;
 
@@ -607,6 +611,7 @@ GenerationBlockFree(GenerationContext *set, GenerationBlock *block)
 	wipe_mem(block, block->blksize);
 #endif
 
+	TRACE_POSTGRESQL_GENERATION_ALLOC_FREE(block->blksize);
 	free(block);
 }
 
@@ -721,6 +726,7 @@ GenerationFree(void *pointer)
 	dlist_delete(&block->node);
 
 	set->header.mem_allocated -= block->blksize;
+	TRACE_POSTGRESQL_GENERATION_ALLOC_FREE(block->blksize);
 	free(block);
 }
 

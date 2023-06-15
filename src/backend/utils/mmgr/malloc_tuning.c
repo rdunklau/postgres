@@ -26,7 +26,7 @@ assign_work_mem(int newval, void* extra)
 	MallocAdjustSettings();
 }
 
-static void
+void
 assign_glibc_trim_threshold(int newval, void* extra)
 {
 	glibc_malloc_max_trim_threshold = newval;
@@ -94,6 +94,8 @@ MallocAdjustSettings()
 	mmap_threshold = Min(MMAP_THRESHOLD_MAX, uncapped_mmap_threshold);
 	/* Set trim treshold to two times the uncapped value */
 	trim_threshold = Min(INT_MAX, (long) uncapped_mmap_threshold * 2);
+	elog(NOTICE, "NEW trim_thrshold %d NEW mmap_threshold %d",
+			trim_threshold, mmap_threshold);
 	if (mmap_threshold != previous_mmap_threshold)
 	{
 		mallopt(M_MMAP_THRESHOLD, mmap_threshold);
