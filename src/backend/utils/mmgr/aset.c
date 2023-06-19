@@ -51,6 +51,7 @@
 #include "utils/memutils.h"
 #include "utils/memutils_memorychunk.h"
 #include "utils/memutils_internal.h"
+#include "pg_trace.h"
 
 /*--------------------
  * Chunk freelist k holds chunks of size 1 << (k + ALLOC_MINBITS),
@@ -562,7 +563,6 @@ AllocSetReset(MemoryContext context)
 		{
 			/* Reset the block, but don't return it to malloc */
 			char	   *datastart = ((char *) block) + ALLOC_BLOCKHDRSZ;
-
 #ifdef CLOBBER_FREED_MEMORY
 			wipe_mem(datastart, block->freeptr - datastart);
 #else
@@ -578,9 +578,11 @@ AllocSetReset(MemoryContext context)
 			/* Normal case, release the block */
 			context->mem_allocated -= block->endptr - ((char *) block);
 
+			TRACE_POSTGRESQL_PALLOC_PFREE(block->freeptr - ((char *) block));
 #ifdef CLOBBER_FREED_MEMORY
 			wipe_mem(block, block->freeptr - ((char *) block));
 #endif
+
 			free(block);
 		}
 		block = next;
@@ -645,6 +647,7 @@ AllocSetDelete(MemoryContext context)
 				freelist->num_free--;
 
 				/* All that remains is to free the header/initial block */
+
 				free(oldset);
 			}
 			Assert(freelist->num_free == 0);
@@ -671,7 +674,10 @@ AllocSetDelete(MemoryContext context)
 #endif
 
 		if (block != set->keeper)
+		{
+			TRACE_POSTGRESQL_PALLOC_PFREE(block->freeptr - ((char *) block));
 			free(block);
+		}
 
 		block = next;
 	}
@@ -725,6 +731,7 @@ AllocSetAlloc(MemoryContext context, Size size)
 		if (block == NULL)
 			return NULL;
 
+		TRACE_POSTGRESQL_PALLOC_PALLOC(blksize);
 		context->mem_allocated += blksize;
 
 		block->aset = set;
@@ -884,7 +891,7 @@ AllocSetAlloc(MemoryContext context, Size size)
 #endif
 				/* push this chunk onto the free list */
 				link = GetFreeListLink(chunk);
-
+				
 				VALGRIND_MAKE_MEM_DEFINED(link, sizeof(AllocFreeListLink));
 				link->next = set->freelist[a_fidx];
 				VALGRIND_MAKE_MEM_NOACCESS(link, sizeof(AllocFreeListLink));
@@ -1036,10 +1043,11 @@ AllocSetFree(void *pointer)
 			block->next->prev = block->prev;
 
 		set->header.mem_allocated -= block->endptr - ((char *) block);
-
+		TRACE_POSTGRESQL_PALLOC_PFREE(block->freeptr - ((char *) block));
 #ifdef CLOBBER_FREED_MEMORY
 		wipe_mem(block, block->freeptr - ((char *) block));
 #endif
+
 		free(block);
 	}
 	else

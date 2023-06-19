@@ -31,7 +31,7 @@
 #include "utils/memutils.h"
 #include "utils/memutils_internal.h"
 #include "utils/memutils_memorychunk.h"
-
+#include "pg_trace.h"
 
 static void BogusFree(void *pointer);
 static void *BogusRealloc(void *pointer, Size size);
@@ -1166,7 +1166,7 @@ MemoryContextAllocExtended(MemoryContext context, Size size, int flags)
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
-
+	TRACE_POSTGRESQL_PALLOC_PALLOC(size);
 	return ret;
 }
 
@@ -1249,7 +1249,7 @@ palloc(Size size)
 	}
 
 	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
-
+	TRACE_POSTGRESQL_PALLOC_PALLOC(size);
 	return ret;
 }
 
@@ -1282,6 +1282,7 @@ palloc0(Size size)
 	VALGRIND_MEMPOOL_ALLOC(context, ret, size);
 
 	MemSetAligned(ret, 0, size);
+	TRACE_POSTGRESQL_PALLOC_PALLOC(size);
 
 	return ret;
 }
@@ -1321,7 +1322,7 @@ palloc_extended(Size size, int flags)
 
 	if ((flags & MCXT_ALLOC_ZERO) != 0)
 		MemSetAligned(ret, 0, size);
-
+	TRACE_POSTGRESQL_PALLOC_PALLOC(size);
 	return ret;
 }
 
@@ -1508,6 +1509,8 @@ repalloc(void *pointer, Size size)
 	if (method != MCTX_ALIGNED_REDIRECT_ID)
 		VALGRIND_MEMPOOL_CHANGE(context, pointer, ret, size);
 #endif
+
+	TRACE_POSTGRESQL_PALLOC_PALLOC(size);
 
 	return ret;
 }

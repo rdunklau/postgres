@@ -92,9 +92,7 @@ provider postgresql {
 	probe wal__buffer__write__dirty__start();
 	probe wal__buffer__write__dirty__done();
 
-	probe generation_alloc_malloc(Size);
-	probe generation_alloc_free(Size);
+    probe palloc_palloc(Size);
+    probe palloc_pfree(Size);
 
-	probe generation_alloc_create();
-	probe generation_alloc_destroy();
 };
