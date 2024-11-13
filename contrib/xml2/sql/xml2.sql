@@ -137,3 +137,11 @@ $$<xsl:stylesheet version="1.0"
     </sax:output>
   </xsl:template>
 </xsl:stylesheet>$$);
+
+SELECT xpath_nodeset(article_xml::text, '/article/author|/article/pages', 'result', 'item') from articles;
+SELECT xpath_nodeset(article_xml::text, '/article/author|/article/pages', 'item_without_toptag') from articles;
+SELECT xpath_nodeset(article_xml::text, '/article/author|/article/pages') from articles;
+
+SELECT xpath_list(article_xml::text, '/article/author|/article/pages') from articles;
+SELECT xpath_list(article_xml::text, '/article/author|/article/pages', '|') from articles;
+
