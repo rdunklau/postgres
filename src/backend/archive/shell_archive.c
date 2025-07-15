@@ -21,6 +21,7 @@
 #include "archive/archive_module.h"
 #include "archive/shell_archive.h"
 #include "common/percentrepl.h"
+#include "storage/fd.h"
 #include "pgstat.h"
 
 static bool shell_archive_configured(ArchiveModuleState *state);
@@ -60,6 +61,11 @@ shell_archive_file(ArchiveModuleState *state, const char *file,
 	char	   *xlogarchcmd;
 	char	   *nativePath = NULL;
 	int			rc;
+	FILE	   *command_pipe_handle = NULL;
+	ssize_t		readSize;
+	char		buf[1024];
+	int			pipeFd;
+
 
 	if (path)
 	{
@@ -77,7 +83,39 @@ shell_archive_file(ArchiveModuleState *state, const char *file,
 
 	fflush(NULL);
 	pgstat_report_wait_start(WAIT_EVENT_ARCHIVE_COMMAND);
-	rc = system(xlogarchcmd);
+	command_pipe_handle = OpenPipeStream(xlogarchcmd, "r");
+
+	/*
+	 * This can happen if OpenPipeStream was out of fds and could not release
+	 * any to get the popen call to finally complete.
+	 */
+	if (command_pipe_handle == NULL)
+	{
+		ereport(LOG,
+				errmsg("archive command failed out of file descriptors"),
+				errdetail("The failed archive command was: %s",
+						  xlogarchcmd));
+		return false;
+	}
+
+	pipeFd = fileno(command_pipe_handle);
+	fcntl(pipeFd, F_SETFL, O_NONBLOCK);
+	while (true)
+	{
+		CHECK_FOR_INTERRUPTS();
+		readSize = read(pipeFd, buf, 1024);
+		if ((readSize > 0) || (readSize == -1 && errno == EAGAIN))
+		{
+			usleep(10000);
+			continue;
+		}
+		else
+		{
+			break;
+		}
+	}
+	rc = ClosePipeStream(command_pipe_handle);
+
 	pgstat_report_wait_end();
 
 	if (rc != 0)
